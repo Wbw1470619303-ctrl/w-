@@ -1,0 +1,642 @@
+-- Delta 适配 + Fluent UI 移植脚本
+-- 加载 Fluent UI 核心库（Delta 兼容版）
+local success, Fluent = pcall(function()
+    return loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+end)
+if not success then
+    warn("Fluent UI 加载失败，Delta 注入器需允许 Http 请求")
+    game.Players.LocalPlayer:Kick("Fluent UI 加载失败，请检查网络或注入器权限")
+    return
+end
+
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+-- Delta 适配工具函数（兼容 cloneref/syn 等 API）
+local function getService(name)
+    local service = game:GetService(name)
+    if cloneref then return cloneref(service) end
+    return service
+end
+
+-- 核心服务初始化（Delta 安全获取）
+local HttpService = getService("HttpService")
+local Players = getService("Players")
+local CoreGui = getService("CoreGui")
+local TweenService = getService("TweenService")
+local RunService = getService("RunService")
+local ReplicatedStorage = getService("ReplicatedStorage")
+local ProximityPromptService = getService("ProximityPromptService")
+local Workspace = getService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+-- 全局状态管理（Delta 持久化兼容）
+local GlobalState = {
+    Features = {KillAura = false, AutoChop = false, AutoEat = false, ChildESP = false, ChestESP = false, InstantInteract = false},
+    DoorsInstantInteract = false,
+    DoorsAutoSkip = false,
+    DoorsMonsterDetectionEnabled = false,
+    DoorsSeekDetectionEnabled = false,
+    CurrentTheme = "Dark",
+    Config = {FileSaving = false, Format = false}
+}
+
+-- ==================== 卡密系统移植（Delta 适配）====================
+local RayfieldKeySystem = {}
+RayfieldKeySystem.__index = RayfieldKeySystem
+
+function RayfieldKeySystem.new(KeySettings, DisableBuildWarnings)
+    local self = setmetatable({}, RayfieldKeySystem)
+    self.KeySettings = KeySettings
+    self.DisableBuildWarnings = DisableBuildWarnings
+    self.Passthrough = false
+    self:ValidateKeySettings()
+    self:InitFileSystem()
+    self:CheckBuildCompatibility()
+    return self
+end
+
+-- 卡密系统核心方法（保留原逻辑，适配 Delta 路径）
+function RayfieldKeySystem:ValidateKeySettings()
+    if not self.KeySettings then
+        warn("Rayfield | 未提供卡密配置，跳过验证")
+        self.Passthrough = true
+        return
+    end
+    self.KeySettings.Title = self.KeySettings.Title or "BS脚本"
+    self.KeySettings.Subtitle = self.KeySettings.Subtitle or "卡密验证"
+    self.KeySettings.Note = self.KeySettings.Note or "QQ群：467186748 获取卡密"
+    self.KeySettings.FileName = self.KeySettings.FileName or "BS_Script_Key"
+    self.KeySettings.SaveKey = self.KeySettings.SaveKey ~= nil and self.KeySettings.SaveKey or true
+    self.KeySettings.GrabKeyFromSite = self.KeySettings.GrabKeyFromSite ~= nil and self.KeySettings.GrabKeyFromSite or true
+    if typeof(self.KeySettings.Key) == "string" then
+        self.KeySettings.Key = {self.KeySettings.Key}
+    end
+    self.KeySettings.Key = self.KeySettings.Key or {}
+    
+    if self.KeySettings.GrabKeyFromSite then
+        for i, KeyUrl in ipairs(self.KeySettings.Key) do
+            local Success, Response = pcall(function()
+                local RawKey = tostring(game:HttpGet(KeyUrl):gsub("[\n\r]", " "))
+                self.KeySettings.Key[i] = string.gsub(RawKey, " ", "")
+            end)
+            if not Success then
+                print("卡密获取失败：" .. KeyUrl .. " - " .. tostring(Response))
+            end
+        end
+    end
+    self.AttemptsRemaining = math.random(2, 5)
+end
+
+function RayfieldKeySystem:InitFileSystem()
+    if isfolder and not isfolder("Rayfield/Key System") then
+        makefolder("Rayfield/Key System")
+    end
+    if isfile and isfile("Rayfield/Key System/" .. self.KeySettings.FileName .. ".rfld") then
+        local SavedKey = readfile("Rayfield/Key System/" .. self.KeySettings.FileName .. ".rfld")
+        for _, ValidKey in ipairs(self.KeySettings.Key) do
+            if SavedKey == ValidKey then
+                self.Passthrough = true
+                break
+            end
+        end
+    end
+end
+
+function RayfieldKeySystem:CheckBuildCompatibility()
+    local InterfaceBuild = '3K3W'
+    local correctBuild = false
+    local buildAttempts = 0
+    local RayfieldUI = game:GetObjects("rbxassetid://10804731440")[1]
+    repeat
+        if RayfieldUI:FindFirstChild('Build') and RayfieldUI.Build.Value == InterfaceBuild then
+            correctBuild = true
+            break
+        end
+        correctBuild = false
+        if not self.DisableBuildWarnings then
+            warn('Rayfield | 版本不兼容，可能影响功能')
+        end
+        local toDestroy = RayfieldUI
+        RayfieldUI = game:GetObjects("rbxassetid://10804731440")[1]
+        if toDestroy then toDestroy:Destroy() end
+        buildAttempts = buildAttempts + 1
+    until buildAttempts >= 2
+    RayfieldUI:Destroy()
+end
+
+function RayfieldKeySystem:LoadKeyUI()
+    local KeyUI = game:GetObjects("rbxassetid://11380036235")[1]
+    KeyUI.Enabled = true
+    if gethui then
+        KeyUI.Parent = gethui()
+    elseif syn and syn.protect_gui then
+        syn.protect_gui(KeyUI)
+        KeyUI.Parent = CoreGui
+    else
+        KeyUI.Parent = CoreGui.RobloxGui or CoreGui
+    end
+    self.KeyUI = KeyUI
+    self.KeyMain = KeyUI.Main
+    self:InitKeyUIStyle()
+    self:BindKeyUIEvents()
+end
+
+function RayfieldKeySystem:InitKeyUIStyle()
+    local KeyMain = self.KeyMain
+    KeyMain.Title.Text = self.KeySettings.Title
+    KeyMain.Subtitle.Text = self.KeySettings.Subtitle
+    KeyMain.NoteMessage.Text = self.KeySettings.Note
+    KeyMain.Size = UDim2.new(0, 467, 0, 175)
+    KeyMain.BackgroundTransparency = 1
+    -- 简化 Tween 动画（Delta 性能优化）
+    TweenService:Create(KeyMain, TweenInfo.new(0.6), {BackgroundTransparency = 0, Size = UDim2.new(0, 500, 0, 187)}):Play()
+    task.wait(0.1)
+    TweenService:Create(KeyMain.Title, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
+    TweenService:Create(KeyMain.Subtitle, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
+end
+
+function RayfieldKeySystem:BindKeyUIEvents()
+    local InputBox = self.KeyMain.Input.InputBox
+    InputBox.FocusLost:Connect(function()
+        if #InputBox.Text == 0 then return end
+        local KeyFound = false
+        for _, ValidKey in ipairs(self.KeySettings.Key) do
+            if InputBox.Text == ValidKey then
+                KeyFound = true
+                break
+            end
+        end
+        if KeyFound then
+            self:OnKeyValid(InputBox.Text)
+        else
+            self:OnKeyInvalid()
+        end
+    end)
+    self.KeyMain.Hide.MouseButton1Click:Connect(function()
+        self:CloseKeyUI()
+    end)
+end
+
+function RayfieldKeySystem:OnKeyValid(FoundKey)
+    -- 验证成功动画
+    TweenService:Create(self.KeyMain, TweenInfo.new(0.6), {BackgroundTransparency = 1}):Play()
+    task.wait(0.5)
+    self.Passthrough = true
+    self.KeyUI:Destroy()
+    if self.KeySettings.SaveKey and writefile then
+        writefile("Rayfield/Key System/" .. self.KeySettings.FileName .. ".rfld", FoundKey)
+        Fluent:Notify({Title = "成功", Content = "卡密已保存，下次自动生效", Duration = 3})
+    end
+end
+
+function RayfieldKeySystem:OnKeyInvalid()
+    self.AttemptsRemaining = self.AttemptsRemaining - 1
+    self.KeyMain.Input.InputBox.Text = ""
+    -- 错误抖动动画
+    TweenService:Create(self.KeyMain, TweenInfo.new(0.2), {Position = UDim2.new(0.495, 0, 0.5, 0)}):Play()
+    task.wait(0.1)
+    TweenService:Create(self.KeyMain, TweenInfo.new(0.2), {Position = UDim2.new(0.505, 0, 0.5, 0)}):Play()
+    task.wait(0.1)
+    TweenService:Create(self.KeyMain, TweenInfo.new(0.2), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+    if self.AttemptsRemaining <= 0 then
+        self:CloseKeyUI()
+        LocalPlayer:Kick("卡密错误次数过多")
+    end
+end
+
+function RayfieldKeySystem:CloseKeyUI()
+    if self.KeyUI then
+        TweenService:Create(self.KeyMain, TweenInfo.new(0.6), {BackgroundTransparency = 1}):Play()
+        task.wait(0.5)
+        self.KeyUI:Destroy()
+    end
+end
+
+function RayfieldKeySystem:WaitForValidation()
+    if self.Passthrough then
+        Fluent:Notify({Title = "验证成功", Content = "正在加载脚本...", Duration = 3})
+        return true
+    end
+    self:LoadKeyUI()
+    repeat task.wait() until self.Passthrough
+    return true
+end
+
+-- ==================== 性能管理器（Delta 内存优化）====================
+local PerformanceManager = {
+    Connections = {},
+    ESPInstances = {},
+    LastScanTime = 0,
+    ScanInterval = 0.5
+}
+
+function PerformanceManager:RegisterConnection(conn)
+    table.insert(self.Connections, conn)
+end
+
+function PerformanceManager:Cleanup()
+    for _, conn in ipairs(self.Connections) do
+        if conn and conn.Connected then conn:Disconnect() end
+    end
+    self.Connections = {}
+    for _, esp in ipairs(self.ESPInstances) do
+        if esp and esp.Parent then esp:Destroy() end
+    end
+    self.ESPInstances = {}
+end
+
+function PerformanceManager:CanScan()
+    local now = tick()
+    if now - self.LastScanTime >= self.ScanInterval then
+        self.LastScanTime = now
+        return true
+    end
+    return false
+end
+
+-- ==================== Fluent UI 窗口创建（Delta 适配）====================
+local Window = Fluent:CreateWindow({
+    Title = "BS黑洞中心 | Delta 适配版",
+    SubTitle = "作者QQ: 1545959422",
+    TabWidth = 180,
+    Size = UDim2.fromOffset(650, 550),
+    Acrylic = true,
+    Theme = GlobalState.CurrentTheme,
+    MinimizeKey = Enum.KeyCode.F5, -- Delta 常用快捷键
+    Parent = gethui() or CoreGui -- Delta 安全挂载
+})
+
+-- 定义所有标签页（对应原脚本功能）
+local Tabs = {
+    Main = Window:AddTab({Title = "主界面", Icon = "home"}),
+    Horror = Window:AddTab({Title = "恐鬼症", Icon = "ghost"}),
+    Forest99 = Window:AddTab({Title = "森林99夜", Icon = "tree"}),
+    Doors = Window:AddTab({Title = "Doors", Icon = "door"}),
+    InkGame = Window:AddTab({Title = "墨水游戏", Icon = "droplet"}),
+    DeadRail = Window:AddTab({Title = "死铁轨", Icon = "train"}),
+    SlapSim = Window:AddTab({Title = "巴掌模拟器", Icon = "hand"}),
+    Ninja = Window:AddTab({Title = "忍者传奇", Icon = "ninja"}),
+    Strength = Window:AddTab({Title = "力量传奇", Icon = "dumbbell"}),
+    Settings = Window:AddTab({Title = "设置", Icon = "settings"})
+}
+
+-- ==================== 主界面标签页 ====================
+do
+    Tabs.Main:AddParagraph({
+        Title = "🎯 BS脚本 Delta 适配版",
+        Content = "支持多游戏功能，F5 隐藏/显示界面\n所有功能已适配 Delta 注入器，稳定运行"
+    })
+    Tabs.Main:AddButton({
+        Title = "复制作者QQ",
+        Description = "点击复制联系QQ: 1545959422",
+        Callback = function()
+            setclipboard("1545959422")
+            Fluent:Notify({Title = "成功", Content = "QQ号已复制到剪贴板", Duration = 2})
+        end
+    })
+    Tabs.Main:AddToggle({
+        Title = "启用文件保存",
+        Description = "保存 SkidSpy 日志到本地",
+        Default = GlobalState.Config.FileSaving,
+        Callback = function(state)
+            GlobalState.Config.FileSaving = state
+            if state and not isfolder("Skid-Spy") then
+                makefolder("Skid-Spy")
+            end
+        end
+    })
+end
+
+-- ==================== 恐鬼症标签页 ====================
+do
+    local EMFCount = 0
+    local GhostLock = true
+    local Cursed = {}
+
+    -- 初始化检测
+    local function initHorrorFeatures()
+        local WorkspaceDescendants = Workspace:GetDescendants()
+        for _, obj in ipairs(WorkspaceDescendants) do
+            if obj:IsA("Model") and (obj.Name == "Ouija Board" or obj.Name == "SummoningCircle") then
+                Cursed = obj
+            elseif obj:IsA("Tool") and obj.Name == "Tarot Cards" then
+                Cursed = obj
+            end
+        end
+    end
+    initHorrorFeatures()
+
+    -- 控件创建
+    Tabs.Horror:AddParagraph({Title = "EMF计数器", Content = "当前检测到 " .. EMFCount .. " 次互动"})
+    Tabs.Horror:AddButton({
+        Title = "夜视模式",
+        Callback = function()
+            local Lighting = getService("Lighting")
+            Lighting.Brightness = 2
+            Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+            Lighting.GlobalShadows = false
+            Fluent:Notify({Title = "启用", Content = "夜视模式已开启", Duration = 2})
+        end
+    })
+    Tabs.Horror:AddToggle({
+        Title = "幽灵透视",
+        Default = GlobalState.Features.ChildESP,
+        Callback = function(enabled)
+            GlobalState.Features.ChildESP = enabled
+            GhostLock = not enabled
+            if enabled then
+                coroutine.wrap(function()
+                    while not GhostLock do
+                        for _, ghost in ipairs(Workspace:GetChildren()) do
+                            if ghost.Name == "Ghost" and ghost:IsA("Model") then
+                                for _, part in ipairs(ghost:GetChildren()) do
+                                    if part:IsA("MeshPart") and not part:FindFirstChild("GhostESP") then
+                                        local adornment = Instance.new("BoxHandleAdornment")
+                                        adornment.Name = "GhostESP"
+                                        adornment.Size = Vector3.new(1, 1, 1)
+                                        adornment.AlwaysOnTop = true
+                                        adornment.Transparency = 0.4
+                                        adornment.Adornee = part
+                                        adornment.Parent = part
+                                        table.insert(PerformanceManager.ESPInstances, adornment)
+                                    end
+                                end
+                            end
+                        end
+                        task.wait(1)
+                    end
+                end)()
+            end
+        end
+    })
+end
+
+-- ==================== Forest99 标签页 ====================
+do
+    -- 物品配置（保留原定义）
+    local itemConfig = {{name = "Log", display = "木头", espColor = Color3.fromRGB(139, 69, 19)},
+        {name = "Carrot", display = "胡萝卜", espColor = Color3.fromRGB(255, 165, 0)},
+        {name = "Chest", display = "宝箱", espColor = Color3.fromRGB(210, 180, 140)}}
+
+    -- 杀戮光环开关
+    Tabs.Forest99:AddToggle({
+        Title = "杀戮光环",
+        Description = "自动攻击100米内敌人",
+        Default = GlobalState.Features.KillAura,
+        Callback = function(state)
+            GlobalState.Features.KillAura = state
+        end
+    })
+
+    -- 自动砍树开关
+    Tabs.Forest99:AddToggle({
+        Title = "自动砍树",
+        Description = "自动砍伐附近树木",
+        Default = GlobalState.Features.AutoChop,
+        Callback = function(state)
+            GlobalState.Features.AutoChop = state
+        end
+    })
+
+    -- 物品透视按钮
+    for _, item in ipairs(itemConfig) do
+        Tabs.Forest99:AddButton({
+            Title = item.display .. "透视",
+            Callback = function()
+                local items = {}
+                local folders = {"Items", "MapItems", "WorldItems"}
+                for _, folderName in ipairs(folders) do
+                    local folder = Workspace:FindFirstChild(folderName)
+                    if folder then
+                        for _, obj in ipairs(folder:GetDescendants()) do
+                            if obj.Name == item.name and obj:IsA("Model") then
+                                local part = obj.PrimaryPart or obj:FindFirstChild("Handle")
+                                if part and not part:FindFirstChild("ESP") then
+                                    local billboard = Instance.new("BillboardGui")
+                                    billboard.Name = "ESP"
+                                    billboard.Adornee = part
+                                    billboard.Size = UDim2.new(0, 100, 0, 30)
+                                    billboard.AlwaysOnTop = true
+                                    local text = Instance.new("TextLabel")
+                                    text.Text = item.display
+                                    text.Size = UDim2.new(1, 0, 1, 0)
+                                    text.TextColor3 = item.espColor
+                                    text.BackgroundTransparency = 1
+                                    text.Parent = billboard
+                                    billboard.Parent = part
+                                    table.insert(PerformanceManager.ESPInstances, billboard)
+                                end
+                            end
+                        end
+                    end
+                end
+                Fluent:Notify({Title = "启用", Content = item.display .. "透视已开启", Duration = 2})
+            end
+        })
+    end
+
+    -- 传送篝火按钮
+    Tabs.Forest99:AddButton({
+        Title = "传送回篝火",
+        Callback = function()
+            local Character = LocalPlayer.Character
+            if not Character or not Character:FindFirstChild("HumanoidRootPart") then
+                Fluent:Notify({Title = "错误", Content = "角色未准备好", Duration = 2})
+                return
+            end
+            Character:MoveTo(Vector3.new(0.189, 7.831, -0.341))
+            Fluent:Notify({Title = "成功", Content = "已传送回篝火", Duration = 2})
+        end
+    })
+end
+
+-- ==================== Doors 标签页 ====================
+do
+    -- Doors 物品配置
+    local DoorsItemConfig = {{name = "Door", display = "门", espColor = Color3.fromRGB(255, 255, 255)},
+        {name = "KeyObtain", display = "钥匙", espColor = Color3.fromRGB(255, 215, 0)},
+        {name = "Wardrobe", display = "柜子", espColor = Color3.fromRGB(139, 69, 19)}}
+
+    -- 瞬间互动
+    Tabs.Doors:AddToggle({
+        Title = "瞬间互动",
+        Default = GlobalState.DoorsInstantInteract,
+        Callback = function(state)
+            GlobalState.DoorsInstantInteract = state
+            if state then
+                ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+                    prompt.HoldDuration = 0
+                    fireproximityprompt(prompt)
+                end)
+            end
+        end
+    })
+
+    -- 连续过门
+    Tabs.Doors:AddToggle({
+        Title = "自动过门",
+        Default = GlobalState.DoorsAutoSkip,
+        Callback = function(state)
+            GlobalState.DoorsAutoSkip = state
+            if state then
+                task.spawn(function()
+                    while state do
+                        pcall(function()
+                            local LatestRoom = ReplicatedStorage.GameData.LatestRoom.Value
+                            local CurrentDoor = Workspace.CurrentRooms[tostring(LatestRoom)]:WaitForChild("Door")
+                            LocalPlayer.Character:PivotTo(CFrame.new(CurrentDoor.Door.Position))
+                            task.wait(0.3)
+                            CurrentDoor.ClientOpen:FireServer()
+                        end)
+                        task.wait(0.5)
+                    end
+                end)
+            end
+        end
+    })
+
+    -- 物品透视开关
+    for _, item in ipairs(DoorsItemConfig) do
+        Tabs.Doors:AddToggle({
+            Title = item.display .. "透视",
+            Default = false,
+            Callback = function(enabled)
+                item.enabled = enabled
+                if enabled then
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
+                        if obj.Name == item.name and obj:IsA("Model") then
+                            local highlight = Instance.new("Highlight")
+                            highlight.FillColor = item.espColor
+                            highlight.OutlineColor = item.espColor
+                            highlight.FillTransparency = 0.3
+                            highlight.Parent = obj
+                            table.insert(PerformanceManager.ESPInstances, highlight)
+                        end
+                    end
+                end
+            end
+        })
+    end
+end
+
+-- ==================== 设置标签页 ====================
+do
+    Tabs.Settings:AddDropdown({
+        Title = "界面主题",
+        Values = Fluent.Themes,
+        Default = GlobalState.CurrentTheme,
+        Callback = function(theme)
+            GlobalState.CurrentTheme = theme
+            Fluent:SetTheme(theme)
+            SaveManager:SaveConfig()
+        end
+    })
+
+    Tabs.Settings:AddToggle({
+        Title = "毛玻璃效果",
+        Default = true,
+        Callback = function(state)
+            Fluent:ToggleAcrylic(state)
+        end
+    })
+
+    Tabs.Settings:AddButton({
+        Title = "清理内存",
+        Description = "释放ESP和连接占用的内存",
+        Callback = function()
+            PerformanceManager:Cleanup()
+            Fluent:Notify({Title = "成功", Content = "内存已清理", Duration = 2})
+        end
+    })
+
+    -- 配置保存
+    SaveManager:SetLibrary(Fluent)
+    InterfaceManager:SetLibrary(Fluent)
+    SaveManager:SetFolder("BS_Script/Delta")
+    SaveManager:LoadAutoloadConfig()
+end
+
+-- ==================== 核心功能循环（Delta 性能优化）====================
+local mainLoop = RunService.Heartbeat:Connect(function()
+    if not PerformanceManager:CanScan() then return end
+    local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    if not Character:FindFirstChild("HumanoidRootPart") then return end
+
+    -- 自动杀戮
+    if GlobalState.Features.KillAura then
+        if Character:FindFirstChild("ToolHandle") then
+            local tool = Character.ToolHandle.OriginalItem.Value
+            if tool and ({["Old Axe"] = true, ["Spear"] = true})[tool.Name] then
+                for _, target in ipairs(Workspace.Characters:GetChildren()) do
+                    local distance = (Character.HumanoidRootPart.Position - target.HumanoidRootPart.Position).Magnitude
+                    if distance <= 100 then
+                        ReplicatedStorage.RemoteEvents.ToolDamageObject:InvokeServer(target, tool, true)
+                    end
+                end
+            end
+        end
+    end
+
+    -- 自动砍树
+    if GlobalState.Features.AutoChop then
+        if Character:FindFirstChild("ToolHandle") then
+            local tool = Character.ToolHandle.OriginalItem.Value
+            if tool and ({["Old Axe"] = true, ["Iron Axe"] = true})[tool.Name] then
+                for _, tree in ipairs(Workspace.Map.Foliage:GetChildren()) do
+                    if tree:IsA("Model") and tree:FindFirstChild("Trunk") then
+                        local distance = (Character.HumanoidRootPart.Position - tree.Trunk.Position).Magnitude
+                        if distance <= 100 then
+                            ReplicatedStorage.RemoteEvents.ToolDamageObject:InvokeServer(tree, tool, true)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+PerformanceManager:RegisterConnection(mainLoop)
+
+-- ==================== 卡密验证（启动时执行）====================
+local function LoadScriptAfterValidation()
+    -- 白名单检测（Delta 兼容）
+    local isWhitelisted = false
+    local success, whitelist = pcall(function()
+        return game:HttpGet("https://gitee.com/BS_script/script/raw/master/白名单")
+    end)
+    if success then
+        for name in whitelist:gmatch("[^\r\n]+") do
+            if LocalPlayer.Name:lower() == name:lower() then
+                isWhitelisted = true
+                break
+            end
+        end
+    end
+
+    if isWhitelisted then
+        Fluent:Notify({Title = "白名单用户", Content = "跳过卡密验证，加载功能中", Duration = 3})
+        Window:Show()
+        return
+    end
+
+    -- 卡密验证
+    local KeySystem = RayfieldKeySystem.new({
+        Title = "BS脚本",
+        Subtitle = "Delta 适配版卡密验证",
+        Note = "QQ群：467186748 获取卡密",
+        FileName = "BS_Script_Delta",
+        SaveKey = true,
+        Key = {"https://raw.githubusercontent.com/BS58dL/Rayfield-Key-List/refs/heads/main/KeyList.txt"}
+    }, false)
+
+    if KeySystem:WaitForValidation() then
+        Window:Show()
+        Fluent:Notify({Title = "加载完成", Content = "所有功能已就绪，F5 隐藏/显示", Duration = 3})
+    end
+end
+
+-- Delta 注入器启动时执行
+task.spawn(LoadScriptAfterValidation)
+
+-- 返回 Fluent 对象
+return Fluent
