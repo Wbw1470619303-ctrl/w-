@@ -1,0 +1,614 @@
+-- Delta 适配：简化全局变量（避免 Delta 注入器限制）
+local Global = {
+    WindUI = nil,
+    MainWindow = nil,
+    noclipConnection = nil,
+    nightVisionEnabled = false,
+    currentWalkSpeed = 16,
+    currentJumpPower = 50,
+    godmodeEnabled = false,
+    autoswingEnabled = false,
+    wallhopConnection = nil, -- 新增：跳墙功能连接存储
+    rainbowAnimationConnection = nil -- 新增：彩虹动画连接存储
+}
+
+-- Delta 兼容：框架加载（替换为 Delta 支持的 HttpGet 方式）
+local success, WindUI = pcall(function()
+    local framework = game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua")
+    return loadstring(framework)()
+end)
+
+if not success then
+    -- Delta 适配：使用原生通知（避免 SetCore 兼容性问题）
+    local notification = Instance.new("ScreenGui")
+    notification.Name = "LoadFailNotice"
+    notification.Parent = game.Players.LocalPlayer.PlayerGui
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.fromOffset(300, 80)
+    textLabel.Position = UDim2.fromScale(0.5, 0.1)
+    textLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+    textLabel.BackgroundColor3 = Color3.new(0, 0, 0)
+    textLabel.TextColor3 = Color3.new(1, 0, 0)
+    textLabel.Text = "WindUI 框架加载失败\n请检查网络或更新 Delta 注入器"
+    textLabel.TextWrapped = true
+    textLabel.Parent = notification
+    task.wait(5)
+    notification:Destroy()
+    return
+end
+
+Global.WindUI = WindUI
+
+-- 预加载所有必需服务（Delta 注入器需显式获取）
+local LocalPlayer = game.Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local MarketplaceService = game:GetService("MarketplaceService")
+local CoreGui = game:GetService("CoreGui") -- 预加载 CoreGui 用于悬浮窗绑定
+local Confirmed = false
+
+-- 角色加载检测函数（Delta 适配：增加超时处理）
+local function waitForCharacter()
+    local timeout = 0
+    while not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") do
+        task.wait(0.1)
+        timeout += 0.1
+        if timeout >= 10 then -- 10秒超时
+            return nil
+        end
+    end
+    return LocalPlayer.Character
+end
+
+-- 新增：彩虹色生成函数（通过色相循环实现）
+local function getRainbowColor(hueOffset)
+    local hue = (tick() * 0.2 + hueOffset) % 1 -- 0.2 控制变色速度，值越大越快
+    return Color3.fromHSV(hue, 0.8, 0.9) -- 饱和度0.8、明度0.9，颜色更鲜艳
+end
+
+-- 新增：启动小窗彩虹动画
+local function startRainbowAnimation(openButton)
+    -- 先关闭已有动画，避免重复
+    if Global.rainbowAnimationConnection then
+        Global.rainbowAnimationConnection:Disconnect()
+    end
+
+    -- 每帧更新颜色（使用 RenderStepped 确保UI同步）
+    Global.rainbowAnimationConnection = RunService.RenderStepped:Connect(function()
+        if openButton and openButton.Parent then
+            -- 生成彩虹渐变（两种相邻彩虹色，让光圈有渐变光泽）
+            local color1 = getRainbowColor(0)
+            local color2 = getRainbowColor(0.1) -- 偏移色相，形成渐变
+            openButton.Color = ColorSequence.new(color1, color2)
+        else
+            -- 小窗不存在时断开动画
+            Global.rainbowAnimationConnection:Disconnect()
+            Global.rainbowAnimationConnection = nil
+        end
+    end)
+end
+
+-- 初始弹窗（Delta 适配：简化弹窗参数）
+WindUI:Popup({
+    Title = "w 超级脚本",
+    IconThemed = true,
+    Content = "欢迎使用 MR 附属脚本 MR pio\n当前用户: " .. LocalPlayer.Name,
+    Buttons = {
+        { Title = "取消", Callback = function() end },
+        { Title = "加载脚本", Callback = function() Confirmed = true; createMainUI() end }
+    }
+})
+
+-- 主UI创建函数（修复语法闭合+Delta适配+彩虹小窗+Roblox背景）
+function createMainUI()
+    -- Delta 适配：窗口参数简化+新增最小化回调+添加背景图片
+    local MainWindow = WindUI:CreateWindow({
+        Title = "w 超级脚本",
+        Icon = "crown",
+        Author = "wbwhnb (QQ: 2318995920)",
+        Folder = "wSuperScript",
+        Size = UDim2.fromOffset(600, 400),
+        Theme = "Dark",
+        SideBarWidth = 220,
+        BackgroundImage = "rbxassetid://17383497610", -- 添加 Roblox 风格背景图片
+        BackgroundTransparency = 0.1, -- 轻微透明以显示背景
+        OnClose = function() MainWindow:Hide() end, -- 关闭时隐藏（保留悬浮窗）
+        OnMinimize = function() -- 新增：最小化回调，确保悬浮窗可见
+            MainWindow:Hide()
+            local openButton = CoreGui:FindFirstChild("WindUI_OpenButton")
+            if openButton then openButton.Visible = true end
+        end,
+    })
+    Global.MainWindow = MainWindow
+
+    -- 窗口按钮样式（Delta 适配：绑定 CoreGui+彩虹色初始配置）
+    local function createOpenButton()
+        local openButton = MainWindow:EditOpenButton({
+            Title = "w 超级脚本",
+            Icon = "crown",
+            CornerRadius = UDim.new(0, 10),
+            StrokeThickness = 2,
+            Color = ColorSequence.new(getRainbowColor(0), getRainbowColor(0.1)), -- 初始彩虹色
+            Draggable = true,
+            Parent = CoreGui, -- 绑定到 CoreGui，避免 Delta 回收
+            ZIndex = 9999, -- 悬浮在最上层，不被遮挡
+            Size = UDim2.fromOffset(120, 40), -- 调整小窗大小，便于点击
+        })
+        -- 启动彩虹动画
+        startRainbowAnimation(openButton)
+        return openButton
+    end
+
+    -- 初始创建小窗并启动动画
+    local openButton = createOpenButton()
+
+    -- ==================== 作者信息 Tab ====================
+    local AuthorTab = MainWindow:Tab({ Title = "作者信息", Icon = "user" })
+    AuthorTab:Section({ Title = "脚本作者详情" })
+    AuthorTab:Paragraph({ Text = "作者: wbwhnb" })
+    AuthorTab:Paragraph({ Text = "作者 QQ: 2318995920" })
+    AuthorTab:Paragraph({ Text = "脚本性质: 免费开源" })
+    AuthorTab:Button({
+        Title = "复制作者 QQ",
+        Callback = function()
+            setclipboard("2318995920")
+            WindUI:Notify({ Title = "提示", Content = "QQ 已复制到剪贴板", Duration = 3 })
+        end
+    })
+
+    -- ==================== 通用功能 Tab ====================
+    local GeneralTab = MainWindow:Tab({ Title = "通用功能", Icon = "settings" })
+    GeneralTab:Section({ Title = "基础属性调整" })
+
+    -- 速度调节（修复滑条问题）
+    local speedSlider = GeneralTab:Slider({
+        Title = "移动速度",
+        Min = 16,
+        Max = 200,
+        Default = Global.currentWalkSpeed,
+        Color = Color3.new(0, 1, 1),
+        Increment = 1,
+        ValueName = "Speed",
+        Callback = function(value)
+            Global.currentWalkSpeed = value
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.WalkSpeed = value end
+            end
+        end
+    })
+
+    -- 跳跃高度调节（修复滑条问题）
+    local jumpSlider = GeneralTab:Slider({
+        Title = "跳跃高度",
+        Min = 50,
+        Max = 200,
+        Default = Global.currentJumpPower,
+        Color = Color3.new(1, 0, 1),
+        Increment = 1,
+        ValueName = "Power",
+        Callback = function(value)
+            Global.currentJumpPower = value
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.JumpPower = value end
+            end
+        end
+    })
+
+    -- 夜视模式
+    GeneralTab:Toggle({
+        Title = "夜视模式",
+        Default = Global.nightVisionEnabled,
+        Callback = function(state)
+            Global.nightVisionEnabled = state
+            if state then
+                Lighting.Ambient = Color3.new(0.8, 0.8, 0.8)
+                Lighting.OutdoorAmbient = Color3.new(0.6, 0.6, 0.6)
+            else
+                Lighting.Ambient = Color3.new(0.1, 0.1, 0.1)
+                Lighting.OutdoorAmbient = Color3.new(0.2, 0.2, 0.2)
+            end
+        end
+    })
+
+    -- 穿墙模式（Delta 适配：避免连接泄露）
+    GeneralTab:Toggle({
+        Title = "穿墙模式",
+        Default = false,
+        Callback = function(state)
+            if state then
+                if not Global.noclipConnection then
+                    Global.noclipConnection = RunService.Stepped:Connect(function()
+                        local char = LocalPlayer.Character
+                        if char then
+                            for _, part in pairs(char:GetChildren()) do
+                                if part:IsA("BasePart") then part.CanCollide = false end
+                            end
+                        end
+                    end)
+                end
+            else
+                if Global.noclipConnection then
+                    Global.noclipConnection:Disconnect()
+                    Global.noclipConnection = nil
+                end
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetChildren()) do
+                        if part:IsA("BasePart") then part.CanCollide = true end
+                    end
+                end
+            end
+        end
+    })
+
+    -- 无敌模式
+    GeneralTab:Button({
+        Title = "无敌模式",
+        Callback = function()
+            Global.godmodeEnabled = not Global.godmodeEnabled
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if Global.godmodeEnabled then
+                        humanoid.MaxHealth = math.huge
+                        humanoid.Health = math.huge
+                        humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                            if humanoid.Health < math.huge then humanoid.Health = math.huge end
+                        end)
+                        WindUI:Notify({ Title = "成功", Content = "无敌模式已激活", Duration = 3 })
+                    else
+                        humanoid.MaxHealth = 100
+                        humanoid.Health = 100
+                        WindUI:Notify({ Title = "关闭", Content = "无敌模式已关闭", Duration = 3 })
+                    end
+                end
+            else
+                WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+            end
+        end
+    })
+
+    -- 点击传送
+    GeneralTab:Button({
+        Title = "点击传送",
+        Callback = function()
+            local tool = Instance.new("Tool")
+            tool.RequiresHandle = false
+            tool.Name = "[FE] 点击传送工具"
+            tool.Activated:Connect(function()
+                local mouse = LocalPlayer:GetMouse()
+                local char = waitForCharacter()
+                if mouse.Hit and char and char:FindFirstChild("HumanoidRootPart") then
+                    local pos = mouse.Hit.Position + Vector3.new(0, 2.5, 0)
+                    char.HumanoidRootPart.CFrame = CFrame.new(pos)
+                end
+            end)
+            tool.Parent = LocalPlayer.Backpack
+            WindUI:Notify({ Title = "获取", Content = "传送工具已放入背包", Duration = 2 })
+        end
+    })
+
+    -- 新增：跳墙功能（Delta 适配）
+    GeneralTab:Button({
+        Title = "跳墙模式",
+        Callback = function()
+            -- 先关闭已有的跳墙连接（避免重复加载）
+            if Global.wallhopConnection then
+                Global.wallhopConnection:Disconnect()
+                Global.wallhopConnection = nil
+                WindUI:Notify({ Title = "关闭", Content = "跳墙模式已关闭", Duration = 3 })
+                return
+            end
+
+            -- Delta 适配：拆分 HttpGet 和 loadstring，双重错误捕获
+            local success, wallhopScript = pcall(function()
+                return game:HttpGet("https://raw.githubusercontent.com/ScpGuest666/Random-Roblox-script/refs/heads/main/Roblox%20WallHop%20V4%20script", true)
+            end)
+
+            if not success then
+                WindUI:Notify({ Title = "加载失败", Content = "跳墙脚本链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+
+            -- 执行跳墙脚本并绑定连接（便于后续关闭）
+            local execSuccess, wallhopFunc = pcall(function()
+                local func = loadstring(wallhopScript)
+                return func() -- 执行脚本并获取返回值（若脚本返回连接对象）
+            end)
+
+            if execSuccess then
+                -- 若脚本返回 RunService 连接，直接存储；否则创建空连接标记
+                if typeof(wallhopFunc) == "RBXScriptConnection" then
+                    Global.wallhopConnection = wallhopFunc
+                else
+                    -- 兼容脚本无返回连接的情况，用空连接标记状态
+                    Global.wallhopConnection = Instance.new("BindableEvent").Event:Connect(function() end)
+                end
+                WindUI:Notify({ Title = "成功", Content = "跳墙模式已激活，再次点击关闭", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "跳墙脚本不兼容 Delta 或语法错误", Duration = 3 })
+            end
+        end
+    })
+
+    -- ==================== 新增：xahub 脚本（Delta 适配） ====================
+    GeneralTab:Section({ Title = "第三方脚本" })
+    GeneralTab:Button({
+        Title = "加载 xahub",
+        Callback = function()
+            -- Delta 适配：拆分 HttpGet 和 loadstring，用 pcall 捕获错误
+            local success, xahubScript = pcall(function()
+                return game:HttpGet("https://pastebin.com/raw/h8nC0fLb", true)
+            end)
+            if not success then
+                WindUI:Notify({ Title = "加载失败", Content = "xahub 链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+            -- 执行脚本并捕获错误
+            local execSuccess = pcall(function()
+                loadstring(xahubScript)()
+            end)
+            if execSuccess then
+                WindUI:Notify({ Title = "加载成功", Content = "xahub 脚本已执行", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "xahub 脚本语法错误或不兼容 Delta", Duration = 3 })
+            end
+        end
+    })
+
+    -- ==================== 娱乐功能 Tab ====================
+    local FunTab = MainWindow:Tab({ Title = "娱乐功能", Icon = "emoji" })
+    FunTab:Button({
+        Title = "蓝屏特效",
+        Callback = function()
+            local success = pcall(function()
+                loadstring(game:HttpGet("https://github.com/RunDTM/roblox-bluescreen/raw/main/bsod.lua"))()
+            end)
+            if success then
+                WindUI:Notify({ Title = "开启", Content = "蓝屏特效已激活（大退关闭）", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "失败", Content = "蓝屏脚本链接失效", Duration = 3 })
+            end
+        end
+    })
+    FunTab:Button({
+        Title = "自杀",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.Health = 0 end
+            end
+        end
+    })
+
+    -- ==================== DOORS 专属 Tab ====================
+    local DoorsTab = MainWindow:Tab({ Title = "DOORS", Icon = "door-open" })
+    DoorsTab:Section({ Title = "核心功能" })
+    DoorsTab:Button({
+        Title = "最强汉化脚本",
+        Callback = function()
+            local success = pcall(function()
+                loadstring(game:HttpGet("https://pastebin.com/raw/65TwT8ja"))()
+            end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "DOORS 汉化脚本已执行" or "脚本链接失效，请更换",
+                Duration = 3
+            })
+        end
+    })
+    DoorsTab:Button({
+        Title = "门绘图显示",
+        Callback = function()
+            local success = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/cbhlyy/lyycbh/main/doors1"))()
+            end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "门绘图显示已开启" or "脚本链接失效，请更换",
+                Duration = 3
+            })
+        end
+    })
+    DoorsTab:Button({
+        Title = "道具吸铁石",
+        Callback = function()
+            local success = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/MrNeRD0/Doors-Hack/main/MagnetByNerd.lua"))()
+            end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "吸铁石功能已激活" or "脚本链接失效，请更换",
+                Duration = 3
+            })
+        end
+    })
+    DoorsTab:Button({
+        Title = "获取骷髅钥匙",
+        Callback = function()
+            local success = pcall(function()
+                local item = game:GetObjects("rbxassetid://11697889137")[1]
+                item.Parent = LocalPlayer.Backpack
+            end)
+            WindUI:Notify({
+                Title = success and "成功" or "失败",
+                Content = success and "骷髅钥匙已放入背包" or "钥匙ID失效",
+                Duration = 3
+            })
+        end
+    })
+
+    -- ==================== 力量传奇 专属 Tab ====================
+    local MuscleLegendsTab = MainWindow:Tab({ Title = "力量传奇", Icon = "dumbbell" })
+    MuscleLegendsTab:Section({ Title = "脚本功能" })
+    MuscleLegendsTab:Button({
+        Title = "杯脚本",
+        Callback = function()
+            local success = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/zuohongjian/bjb/main/llcq"))()
+            end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "杯脚本已执行" or "脚本链接失效",
+                Duration = 3
+            })
+        end
+    })
+    MuscleLegendsTab:Button({
+        Title = "Speed Hub X",
+        Callback = function()
+            local success = pcall(function()
+                loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ahmadsgamer2/Script--Game/main/Muscle-Legends"))()
+            end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "Speed Hub X 已执行" or "脚本链接失效",
+                Duration = 3
+            })
+        end
+    })
+    MuscleLegendsTab:Section({ Title = "快速传送" })
+    MuscleLegendsTab:Button({
+        Title = "出生点",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then char.HumanoidRootPart.CFrame = CFrame.new(7, 3, 108) end
+        end
+    })
+    MuscleLegendsTab:Button({
+        Title = "冰霜健身房",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then char.HumanoidRootPart.CFrame = CFrame.new(-2543, 13, -410) end
+        end
+    })
+    MuscleLegendsTab:Button({
+        Title = "神话健身房",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then char.HumanoidRootPart.CFrame = CFrame.new(2177, 13, 1070) end
+        end
+    })
+
+    -- ==================== 忍者传奇 专属 Tab ====================
+    local NinjaLegendsTab = MainWindow:Tab({ Title = "忍者传奇", Icon = "shuriken" })
+    NinjaLegendsTab:Section({ Title = "自动功能" })
+    -- 自动挥舞（修复语法闭合+Delta适配）
+    NinjaLegendsTab:Toggle({
+        Title = "自动挥舞",
+        Default = false,
+        Callback = function(state)
+            Global.autoswingEnabled = state
+            if state then
+                spawn(function()
+                    while Global.autoswingEnabled do
+                        task.wait()
+                        if LocalPlayer:FindFirstChild("ninjaEvent") then
+                            LocalPlayer.ninjaEvent:FireServer("swingKatana")
+                        else
+                            Global.autoswingEnabled = false
+                            WindUI:Notify({ Title = "错误", Content = "未找到忍者传奇事件", Duration = 3 })
+                            break
+                        end
+                    end
+                end)
+                WindUI:Notify({ Title = "成功", Content = "自动挥舞已激活", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "关闭", Content = "自动挥舞已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- 自动售卖
+    local autosellEnabled = false
+    NinjaLegendsTab:Toggle({
+        Title = "自动售卖",
+        Default = false,
+        Callback = function(state)
+            autosellEnabled = state
+            if state then
+                spawn(function()
+                    while autosellEnabled do
+                        task.wait(0.1)
+                        local char = waitForCharacter()
+                        if char then
+                            local sellArea = Workspace:FindFirstChild("sellAreaCircles")
+                            if sellArea and sellArea:FindFirstChild("sellAreaCircle7") then
+                                local circleInner = sellArea.sellAreaCircle7:FindFirstChild("circleInner")
+                                if circleInner then
+                                    circleInner.CFrame = char.HumanoidRootPart.CFrame
+                                    task.wait(0.1)
+                                    circleInner.CFrame = Workspace:FindFirstChild("Part") and Workspace.Part.CFrame or char.HumanoidRootPart.CFrame
+                                end
+                            end
+                        end
+                    end
+                end)
+                WindUI:Notify({ Title = "成功", Content = "自动售卖已激活", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "关闭", Content = "自动售卖已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- ==================== Delta 专属保活逻辑（含彩虹小窗保活） ====================
+    spawn(function()
+        while true do
+            task.wait(3)
+            -- 1. 检查主窗口状态，确保悬浮窗存在且彩虹动画运行
+            if Global.MainWindow then
+                local openButton = CoreGui:FindFirstChild("WindUI_OpenButton")
+                if not openButton then
+                    -- 重建小窗并重启动画
+                    openButton = createOpenButton()
+                else
+                    -- 确保悬浮窗可见
+                    openButton.Visible = true
+                    -- 检查动画是否运行，未运行则重启
+                    if not Global.rainbowAnimationConnection or not Global.rainbowAnimationConnection.Connected then
+                        startRainbowAnimation(openButton)
+                    end
+                end
+            end
+
+            -- 2. 角色重生后恢复属性
+            LocalPlayer.CharacterAdded:Connect(function(newChar)
+                task.wait(1)
+                local humanoid = newChar:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = Global.currentWalkSpeed
+                    humanoid.JumpPower = Global.currentJumpPower
+                    if Global.godmodeEnabled then
+                        humanoid.MaxHealth = math.huge
+                        humanoid.Health = math.huge
+                    end
+                end
+                if Global.noclipConnection then
+                    for _, part in pairs(newChar:GetChildren()) do
+                        if part:IsA("BasePart") then part.CanCollide = false end
+                    end
+                end
+            end)
+
+            -- 3. 跳墙功能保活
+            if Global.wallhopConnection and not Global.wallhopConnection.Connected then
+                Global.wallhopConnection = nil
+            end
+        end
+    end)
+
+    -- 加载成功通知
+    WindUI:Notify({
+        Title = "加载成功",
+        Content = "彩虹小窗已激活，光圈颜色持续变化\nUI背景已添加Roblox风格图片",
+        Duration = 3
+    })
+end
