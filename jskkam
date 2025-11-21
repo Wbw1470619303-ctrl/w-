@@ -1,0 +1,729 @@
+-- Delta注入器专属版：无HTTP原生GUI + 翻译功能
+-- 核心适配点：1. syn库兼容 2. UI保护 3. 窗口拖拽 4. 输入优化 5. 沙箱适配
+local syn = syn or getgenv().syn -- Delta syn库兼容
+local isDelta = syn and syn.protect_gui ~= nil
+
+-- ==================== 1. Delta安全工具函数 ====================
+local function safeGetService(name)
+    local success, service = pcall(function()
+        return game:GetService(name)
+    end)
+    return success and service or nil
+end
+
+-- 关键服务（Delta安全获取）
+local Players = safeGetService("Players")
+local CoreGui = safeGetService("CoreGui")
+local RunService = safeGetService("RunService")
+local UserInputService = safeGetService("UserInputService")
+local TweenService = safeGetService("TweenService")
+local LocalPlayer = Players and Players.LocalPlayer or nil
+
+-- UI挂载点（Delta优先gethui()）
+local UIParent = gethui() or CoreGui
+if not UIParent then
+    warn("[Delta适配] 无法获取UI挂载点")
+    return
+end
+
+-- ==================== 2. 翻译模块（无冲突）====================
+local Translations = {
+    ["AxiosHub"] = "超级黑洞",
+    ["Lock"] = "锁定",
+    ["Main"] = "主界面",
+    ["Player Target"] = "玩家目标",
+    ["UI Settings"] = "UI设置",
+    ["Shape Controls"] = "形状控制",
+    ["Enable Shape"] = "启用形状",
+    ["Shape Type"] = "形状类型",
+    ["Fibonacci Sphere"] = "斐波那契球体",
+    ["Star"] = "星形",
+    ["Swastika"] = "卍字形",
+    ["Stack"] = "堆叠",
+    ["Size"] = "大小",
+    ["Rotation Speed"] = "旋转速度",
+    ["Distance from Player"] = "与玩家距离",
+    ["Logic"] = "逻辑",
+    ["Target Player"] = "目标玩家",
+    ["Follow Target"] = "跟随目标",
+    ["Select Player"] = "选择玩家",
+    ["Teleport to Target"] = "传送到目标",
+    ["Toggle"] = "切换",
+    ["version: 2.0"] = "版本：2.0",
+    ["测试通知"] = "测试通知",
+    ["通知功能正常"] = "通知功能正常",
+    ["基础开关"] = "基础开关",
+    ["简单开关控件"] = "简单开关控件",
+    ["基础滑动条"] = "基础滑动条",
+    ["测试按钮"] = "测试按钮",
+    ["按钮点击"] = "按钮点击",
+    ["按钮功能正常"] = "按钮功能正常",
+    ["单选下拉菜单"] = "单选下拉菜单",
+    ["颜色选择器"] = "颜色选择器",
+    ["文本输入框"] = "文本输入框",
+    ["输入文字..."] = "输入文字...",
+    ["翻译功能"] = "翻译功能",
+    ["触发UI翻译"] = "触发UI翻译",
+    ["已翻译原生UI控件文本"] = "已翻译原生UI控件文本",
+    ["测试翻译关键词"] = "测试翻译关键词",
+    ["翻译测试"] = "翻译测试",
+    ["欢迎页面"] = "欢迎页面",
+    ["基础控件"] = "基础控件",
+    ["高级控件"] = "高级控件",
+    ["输入控件"] = "输入控件",
+    ["翻译设置"] = "翻译设置"
+}
+
+local function translateText(text)
+    return Translations[text] or text
+end
+
+-- ==================== 3. Delta UI保护与创建 ====================
+-- 主GUI（Delta syn.protect_gui保护）
+local MainGui = Instance.new("ScreenGui")
+MainGui.Name = "Delta_GUI_Translation"
+MainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling -- Delta层级兼容
+if isDelta and syn.protect_gui then
+    syn.protect_gui(MainGui) -- 保护UI不被检测
+end
+MainGui.Parent = UIParent
+
+-- 主窗口（支持拖拽）
+local MainWindow = Instance.new("Frame")
+MainWindow.Name = "MainWindow"
+MainWindow.Size = UDim2.fromOffset(600, 500)
+MainWindow.Position = UDim2.new(0.5, -300, 0.5, -250)
+MainWindow.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainWindow.BorderSizePixel = 0
+MainWindow.Visible = true
+MainWindow.Active = true -- Delta交互兼容
+MainWindow.Draggable = true -- 窗口可拖拽（Delta用户需求）
+MainWindow.DragFrame = MainWindow -- 拖拽区域
+
+-- 窗口样式（Delta视觉优化）
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainWindow
+
+local Shadow = Instance.new("ImageLabel")
+Shadow.Name = "Shadow"
+Shadow.Size = UDim2.new(1, 10, 1, 10)
+Shadow.Position = UDim2.new(0, -5, 0, -5)
+Shadow.BackgroundTransparency = 1
+Shadow.Image = "rbxassetid://10480743857"
+Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.ImageTransparency = 0.8
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(10, 10, 90, 90)
+Shadow.Parent = MainWindow
+
+-- 标题栏（拖拽专用）
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+TitleBar.Parent = MainWindow
+MainWindow.DragFrame = TitleBar -- 限定标题栏拖拽（Delta误触优化）
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Name = "TitleText"
+TitleText.Size = UDim2.new(1, -20, 1, 0)
+TitleText.Position = UDim2.new(0, 10, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = translateText("Delta专属 | 原生GUI+翻译")
+TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleText.TextSize = 18
+TitleText.Font = Enum.Font.GothamBold
+TitleText.Parent = TitleBar
+
+-- 标签页容器（Delta布局优化）
+local TabContainer = Instance.new("Frame")
+TabContainer.Name = "TabContainer"
+TabContainer.Size = UDim2.new(0, 160, 1, -40)
+TabContainer.Position = UDim2.new(0, 0, 0, 40)
+TabContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TabContainer.Parent = MainWindow
+
+-- 内容容器
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Name = "ContentContainer"
+ContentContainer.Size = UDim2.new(1, -160, 1, -40)
+ContentContainer.Position = UDim2.new(0, 160, 0, 40)
+ContentContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ContentContainer.Parent = MainWindow
+
+-- ==================== 4. Delta兼容控件工具 ====================
+local UIUtils = {
+    -- 段落文本（Delta文本渲染优化）
+    createParagraph = function(parent, title, content)
+        local ParagraphFrame = Instance.new("Frame")
+        ParagraphFrame.Size = UDim2.new(1, -40, 0, 80)
+        ParagraphFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 90)
+        ParagraphFrame.BackgroundTransparency = 1
+        ParagraphFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, 0, 0, 20)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 16
+        TitleLabel.Font = Enum.Font.GothamBold
+        TitleLabel.Parent = ParagraphFrame
+
+        local ContentLabel = Instance.new("TextLabel")
+        ContentLabel.Size = UDim2.new(1, 0, 0, 60)
+        ContentLabel.Position = UDim2.new(0, 0, 0, 20)
+        ContentLabel.BackgroundTransparency = 1
+        ContentLabel.Text = translateText(content)
+        ContentLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        ContentLabel.TextSize = 12
+        ContentLabel.TextWrapped = true
+        ContentLabel.Parent = ParagraphFrame
+
+        return ParagraphFrame
+    end,
+
+    -- 按钮（Delta点击响应优化）
+    createButton = function(parent, title, callback)
+        local Button = Instance.new("TextButton")
+        Button.Size = UDim2.new(1, -40, 0, 40)
+        Button.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        Button.BorderSizePixel = 0
+        Button.Text = translateText(title)
+        Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Button.TextSize = 14
+        Button.AutoButtonColor = true -- Deltahover效果
+        Button.MouseButton1Click:Connect(function()
+            pcall(callback) -- Delta错误捕获，避免崩溃
+        end)
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = Button
+
+        -- Delta按钮反馈动画
+        Button.MouseEnter:Connect(function()
+            TweenService:Create(Button, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}):Play()
+        end)
+        Button.MouseLeave:Connect(function()
+            TweenService:Create(Button, TweenInfo.new(0.1), {BackgroundColor3 = Color3.fromRGB(50, 50, 50)}):Play()
+        end)
+
+        Button.Parent = parent
+        return Button
+    end,
+
+    -- 开关（Delta状态同步优化）
+    createToggle = function(parent, title, default)
+        local ToggleFrame = Instance.new("Frame")
+        ToggleFrame.Size = UDim2.new(1, -40, 0, 40)
+        ToggleFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        ToggleFrame.BackgroundTransparency = 1
+        ToggleFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -60, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = ToggleFrame
+
+        local ToggleButton = Instance.new("TextButton")
+        ToggleButton.Size = UDim2.new(0, 40, 0, 20)
+        ToggleButton.Position = UDim2.new(1, -50, 0.5, -10)
+        ToggleButton.BackgroundColor3 = default and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(70, 70, 70)
+        ToggleButton.BorderSizePixel = 0
+        ToggleButton.Text = default and "开" or "关"
+        ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleButton.TextSize = 12
+        ToggleButton.AutoButtonColor = false
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 10)
+        Corner.Parent = ToggleButton
+
+        local isOn = default
+        ToggleButton.MouseButton1Click:Connect(function()
+            isOn = not isOn
+            -- Delta状态切换动画
+            TweenService:Create(ToggleButton, TweenInfo.new(0.1), {
+                BackgroundColor3 = isOn and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(70, 70, 70)
+            }):Play()
+            ToggleButton.Text = isOn and "开" or "关"
+        end)
+
+        ToggleButton.Parent = ToggleFrame
+        return {Frame = ToggleFrame, IsOn = function() return isOn end}
+    end,
+
+    -- 滑动条（Delta拖拽流畅度优化）
+    createSlider = function(parent, title, min, max, default)
+        local SliderFrame = Instance.new("Frame")
+        SliderFrame.Size = UDim2.new(1, -40, 0, 40)
+        SliderFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        SliderFrame.BackgroundTransparency = 1
+        SliderFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(0, 100, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = SliderFrame
+
+        local SliderBar = Instance.new("Frame")
+        SliderBar.Size = UDim2.new(1, -150, 0, 4)
+        SliderBar.Position = UDim2.new(0, 120, 0.5, -2)
+        SliderBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        SliderBar.Parent = SliderFrame
+
+        local SliderHandle = Instance.new("Frame")
+        local handlePos = (default - min) / (max - min)
+        SliderHandle.Size = UDim2.new(0, 16, 0, 16)
+        SliderHandle.Position = UDim2.new(handlePos, -8, 0.5, -8)
+        SliderHandle.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+        SliderHandle.Parent = SliderBar
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(1, 0)
+        Corner.Parent = SliderHandle
+
+        local ValueLabel = Instance.new("TextLabel")
+        ValueLabel.Size = UDim2.new(0, 30, 1, 0)
+        ValueLabel.Position = UDim2.new(1, -30, 0, 0)
+        ValueLabel.BackgroundTransparency = 1
+        ValueLabel.Text = tostring(default)
+        ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ValueLabel.TextSize = 14
+        ValueLabel.Parent = SliderFrame
+
+        local currentValue = default
+        local isDragging = false
+
+        -- Delta拖拽优化：按下-拖拽-松开
+        SliderHandle.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                isDragging = true
+                UserInputService.MouseIconEnabled = false -- Delta鼠标隐藏，提升拖拽体验
+            end
+        end)
+
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                isDragging = false
+                UserInputService.MouseIconEnabled = true
+            end
+        end)
+
+        -- Delta拖拽流畅更新
+        RunService.RenderStepped:Connect(function()
+            if isDragging then
+                local mousePos = UserInputService:GetMouseLocation()
+                local barPos = SliderBar.AbsolutePosition
+                local barSize = SliderBar.AbsoluteSize.X
+                local pos = (mousePos.X - barPos.X) / barSize
+                pos = math.clamp(pos, 0, 1)
+                currentValue = math.floor(pos * (max - min) + min)
+                ValueLabel.Text = tostring(currentValue)
+                -- 平滑移动滑块
+                TweenService:Create(SliderHandle, TweenInfo.new(0.05), {
+                    Position = UDim2.new(pos, -8, 0.5, -8)
+                }):Play()
+            end
+        end)
+
+        return {Frame = SliderFrame, GetValue = function() return currentValue end}
+    end,
+
+    -- 下拉菜单（Delta点击穿透修复）
+    createDropdown = function(parent, title, options, default)
+        local DropdownFrame = Instance.new("Frame")
+        DropdownFrame.Size = UDim2.new(1, -40, 0, 40)
+        DropdownFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        DropdownFrame.BackgroundTransparency = 1
+        DropdownFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -120, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = DropdownFrame
+
+        local DropdownButton = Instance.new("TextButton")
+        DropdownButton.Size = UDim2.new(0, 100, 0, 30)
+        DropdownButton.Position = UDim2.new(1, -110, 0.5, -15)
+        DropdownButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        DropdownButton.BorderSizePixel = 0
+        DropdownButton.Text = translateText(default)
+        DropdownButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        DropdownButton.TextSize = 12
+        DropdownButton.AutoButtonColor = true
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = DropdownButton
+
+        local currentOption = default
+        local activeMenu = nil
+
+        DropdownButton.MouseButton1Click:Connect(function()
+            -- 关闭已有菜单
+            if activeMenu then activeMenu:Destroy() end
+
+            -- 创建选项菜单（Delta层级优化）
+            local OptionMenu = Instance.new("Frame")
+            OptionMenu.Size = UDim2.new(0, 100, 0, #options * 30)
+            OptionMenu.Position = UDim2.new(1, -110, 1, 5)
+            OptionMenu.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            OptionMenu.Parent = DropdownFrame
+            OptionMenu.ZIndex = 100 -- Delta层级置顶，避免被遮挡
+
+            local Corner = Instance.new("UICorner")
+            Corner.CornerRadius = UDim.new(0, 6)
+            Corner.Parent = OptionMenu
+
+            for i, option in ipairs(options) do
+                local OptionButton = Instance.new("TextButton")
+                OptionButton.Size = UDim2.new(1, 0, 0, 30)
+                OptionButton.Position = UDim2.new(0, 0, 0, (i-1)*30)
+                OptionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+                OptionButton.BorderSizePixel = 0
+                OptionButton.Text = translateText(option)
+                OptionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+                OptionButton.TextSize = 12
+                OptionButton.AutoButtonColor = true
+                OptionButton.MouseButton1Click:Connect(function()
+                    currentOption = option
+                    DropdownButton.Text = translateText(option)
+                    OptionMenu:Destroy()
+                    activeMenu = nil
+                end)
+                OptionButton.Parent = OptionMenu
+            end
+
+            activeMenu = OptionMenu
+            -- Delta点击外部关闭菜单
+            local closeConn
+            closeConn = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local menuPos = OptionMenu.AbsolutePosition
+                    local menuSize = OptionMenu.AbsoluteSize
+                    local inMenu = (mousePos.X >= menuPos.X and mousePos.X <= menuPos.X + menuSize.X) and
+                                 (mousePos.Y >= menuPos.Y and mousePos.Y <= menuPos.Y + menuSize.Y)
+                    local inButton = DropdownButton.AbsolutePosition.X <= mousePos.X and mousePos.X <= DropdownButton.AbsolutePosition.X + DropdownButton.AbsoluteSize.X and
+                                   DropdownButton.AbsolutePosition.Y <= mousePos.Y and mousePos.Y <= DropdownButton.AbsolutePosition.Y + DropdownButton.AbsoluteSize.Y
+                    if not inMenu and not inButton then
+                        OptionMenu:Destroy()
+                        activeMenu = nil
+                        closeConn:Disconnect()
+                    end
+                end
+            end)
+        end)
+
+        DropdownButton.Parent = DropdownFrame
+        return {Frame = DropdownFrame, GetValue = function() return currentOption end}
+    end,
+
+    -- 颜色选择器（Delta简化交互）
+    createColorpicker = function(parent, title, defaultColor)
+        local ColorFrame = Instance.new("Frame")
+        ColorFrame.Size = UDim2.new(1, -40, 0, 40)
+        ColorFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        ColorFrame.BackgroundTransparency = 1
+        ColorFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -80, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = ColorFrame
+
+        local ColorButton = Instance.new("TextButton")
+        ColorButton.Size = UDim2.new(0, 30, 0, 30)
+        ColorButton.Position = UDim2.new(1, -70, 0.5, -15)
+        ColorButton.BackgroundColor3 = defaultColor
+        ColorButton.BorderSizePixel = 0
+        ColorButton.Text = ""
+        ColorButton.AutoButtonColor = true
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = ColorButton
+
+        local currentColor = defaultColor
+        local colors = {
+            Color3.fromRGB(255, 0, 0), Color3.fromRGB(0, 255, 0), Color3.fromRGB(0, 0, 255),
+            Color3.fromRGB(255, 255, 0), Color3.fromRGB(255, 0, 255), Color3.fromRGB(0, 255, 255),
+            Color3.fromRGB(255, 255, 255)
+        }
+
+        ColorButton.MouseButton1Click:Connect(function()
+            local currentIdx = 1
+            for i, col in ipairs(colors) do
+                if col == currentColor then currentIdx = i break end
+            end
+            currentIdx = currentIdx % #colors + 1
+            currentColor = colors[currentIdx]
+            -- Delta颜色切换动画
+            TweenService:Create(ColorButton, TweenInfo.new(0.1), {
+                BackgroundColor3 = currentColor
+            }):Play()
+        end)
+
+        ColorButton.Parent = ColorFrame
+        return {Frame = ColorFrame, GetColor = function() return currentColor end}
+    end,
+
+    -- 输入框（Delta输入兼容）
+    createInput = function(parent, title, placeholder)
+        local InputFrame = Instance.new("Frame")
+        InputFrame.Size = UDim2.new(1, -40, 0, 40)
+        InputFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        InputFrame.BackgroundTransparency = 1
+        InputFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(0, 100, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = InputFrame
+
+        local InputBox = Instance.new("TextBox")
+        InputBox.Size = UDim2.new(1, -110, 0, 30)
+        InputBox.Position = UDim2.new(0, 100, 0.5, -15)
+        InputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        InputBox.BorderSizePixel = 0
+        InputBox.PlaceholderText = translateText(placeholder)
+        InputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+        InputBox.Text = ""
+        InputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        InputBox.TextSize = 14
+        InputBox.ClearTextOnFocus = false
+        InputBox.Font = Enum.Font.SourceSans -- Delta字体兼容
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = InputBox
+
+        -- Delta输入优化：禁用自动大写
+        InputBox.AutoCapitalize = Enum.AutoCapitalize.None
+        InputBox.Parent = InputFrame
+        return {Frame = InputFrame, GetText = function() return InputBox.Text end}
+    end,
+
+    -- 通知（Delta置顶显示）
+    showNotification = function(title, content, duration)
+        local Notification = Instance.new("Frame")
+        Notification.Size = UDim2.new(0, 300, 0, 60)
+        Notification.Position = UDim2.new(1, -320, 1, -80)
+        Notification.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        Notification.ZIndex = 1000 -- Delta通知置顶
+        Notification.Parent = MainGui
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 8)
+        Corner.Parent = Notification
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -20, 0, 20)
+        TitleLabel.Position = UDim2.new(0, 10, 0, 10)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 16
+        TitleLabel.Font = Enum.Font.GothamBold
+        TitleLabel.Parent = Notification
+
+        local ContentLabel = Instance.new("TextLabel")
+        ContentLabel.Size = UDim2.new(1, -20, 0, 20)
+        ContentLabel.Position = UDim2.new(0, 10, 0, 30)
+        ContentLabel.BackgroundTransparency = 1
+        ContentLabel.Text = translateText(content)
+        ContentLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        ContentLabel.TextSize = 12
+        ContentLabel.Parent = Notification
+
+        -- Delta通知淡入淡出动画
+        TweenService:Create(Notification, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
+        task.wait(duration or 3)
+        TweenService:Create(Notification, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+        task.wait(0.2)
+        Notification:Destroy()
+    end
+}
+
+-- ==================== 5. 标签页系统（Delta交互优化）====================
+local Tabs = {}
+local currentTab = nil
+
+local function createTab(name, iconText, callback)
+    local TabButton = Instance.new("TextButton")
+    TabButton.Name = name
+    TabButton.Size = UDim2.new(1, 0, 0, 50)
+    TabButton.Position = UDim2.new(0, 0, 0, (#Tabs * 50))
+    TabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    TabButton.Text = ""
+    TabButton.AutoButtonColor = true
+    TabButton.MouseButton1Click:Connect(function()
+        -- 切换标签页样式（Delta动画）
+        for _, tab in ipairs(Tabs) do
+            TweenService:Create(tab.Button, TweenInfo.new(0.1), {
+                BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            }):Play()
+        end
+        TweenService:Create(TabButton, TweenInfo.new(0.1), {
+            BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        }):Play()
+
+        -- 清空内容容器
+        for _, child in ipairs(ContentContainer:GetChildren()) do
+            child:Destroy()
+        end
+
+        -- 执行标签页回调（Delta错误捕获）
+        pcall(callback, ContentContainer)
+        currentTab = name
+    end)
+    TabButton.Parent = TabContainer
+
+    -- 标签图标
+    local IconLabel = Instance.new("TextLabel")
+    IconLabel.Size = UDim2.new(0, 24, 0, 24)
+    IconLabel.Position = UDim2.new(0, 15, 0.5, -12)
+    IconLabel.BackgroundTransparency = 1
+    IconLabel.Text = iconText
+    IconLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    IconLabel.TextSize = 16
+    IconLabel.Parent = TabButton
+
+    -- 标签文本
+    local TabText = Instance.new("TextLabel")
+    TabText.Size = UDim2.new(1, -50, 0, 20)
+    TabText.Position = UDim2.new(0, 45, 0.5, -10)
+    TabText.BackgroundTransparency = 1
+    TabText.Text = translateText(name)
+    TabText.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TabText.TextSize = 14
+    TabText.Parent = TabButton
+
+    -- Delta标签hover效果
+    TabButton.MouseEnter:Connect(function()
+        TweenService:Create(TabText, TweenInfo.new(0.1), {
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+    TabButton.MouseLeave:Connect(function()
+        TweenService:Create(TabText, TweenInfo.new(0.1), {
+            TextColor3 = Color3.fromRGB(200, 200, 200)
+        }):Play()
+    end)
+
+    table.insert(Tabs, {Name = name, Button = TabButton})
+    return TabButton
+end
+
+-- ==================== 6. 标签页内容（Delta功能完整）====================
+-- 欢迎页面
+createTab("欢迎页面", "🏠", function(contentParent)
+    UIUtils.createParagraph(contentParent, "🎯 Delta专属脚本", "无HTTP请求 | 原生GUI | 翻译功能\n已适配Delta注入器，支持窗口拖拽\n按 RightControl 显示/隐藏")
+    UIUtils.createButton(contentParent, "测试通知", function()
+        UIUtils.showNotification("测试", "Delta通知功能正常", 3)
+    end)
+end)
+
+-- 基础控件
+createTab("基础控件", "⚙️", function(contentParent)
+    UIUtils.createToggle(contentParent, "基础开关", false)
+    UIUtils.createSlider(contentParent, "基础滑动条", 0, 100, 50)
+    UIUtils.createButton(contentParent, "测试按钮", function()
+        UIUtils.showNotification("按钮点击", "Delta按钮功能正常", 2)
+    end)
+end)
+
+-- 高级控件
+createTab("高级控件", "🔧", function(contentParent)
+    UIUtils.createDropdown(contentParent, "单选下拉菜单", {"选项A", "选项B", "选项C"}, "选项A")
+    UIUtils.createColorpicker(contentParent, "颜色选择器", Color3.fromRGB(96, 205, 255))
+end)
+
+-- 输入控件
+createTab("输入控件", "📝", function(contentParent)
+    UIUtils.createInput(contentParent, "文本输入框", "输入文字...")
+end)
+
+-- 翻译设置
+createTab("翻译设置", "🌐", function(contentParent)
+    UIUtils.createParagraph(contentParent, "翻译功能", "已加载 " .. #Translations .. " 条规则\n仅翻译指定关键词，无全局冲突")
+    
+    UIUtils.createButton(contentParent, "触发UI翻译", function()
+        local function translateAllUI(parent)
+            for _, child in ipairs(parent:GetChildren()) do
+                if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                    pcall(function()
+                        if child.Text ~= "" then
+                            child.Text = translateText(child.Text)
+                        end
+                        if child:IsA("TextBox") and child.PlaceholderText ~= "" then
+                            child.PlaceholderText = translateText(child.PlaceholderText)
+                        end
+                    end)
+                end
+                translateAllUI(child)
+            end
+        end
+        translateAllUI(MainGui)
+        UIUtils.showNotification("翻译完成", "已翻译所有UI文本", 2)
+    end)
+
+    UIUtils.createButton(contentParent, "测试翻译关键词", function()
+        local testText = "AxiosHub"
+        local translated = translateText(testText)
+        UIUtils.showNotification("翻译测试", testText .. " → " .. translated, 3)
+    end)
+end)
+
+-- ==================== 7. Delta快捷键与初始化 ====================
+-- 快捷键（Delta优先监听）
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.RightControl then
+        MainWindow.Visible = not MainWindow.Visible
+        UIUtils.showNotification("UI控制", MainWindow.Visible and "UI已显示" or "UI已隐藏", 1)
+    end
+end)
+
+-- 初始化（Delta专属提示）
+MainWindow.Parent = MainGui
+if #Tabs > 0 then
+    Tabs[1].Button:FireMouseButton1Click()
+end
+
+-- Delta启动通知
+UIUtils.showNotification("🚀 Delta脚本加载成功", "无HTTP请求，完全适配Delta", 5)
+
+-- Delta精简日志
+print("[Delta-GUI] 脚本加载成功 | 快捷键：RightControl")
+print("[Delta-GUI] 翻译规则数：" .. #Translations)
+
+-- ==================== Delta适配核心说明 ====================
+-- 1. syn.protect_gui保护UI，避免被Delta检测
+-- 2. 窗口支持拖拽，符合Delta用户操作习惯
+-- 3. 控件添加动画反馈，提升Delta交互体验
+-- 4. 输入处理优化，兼容Delta沙箱输入机制
+-- 5. 错误捕获全覆盖，避免Delta脚本崩溃
+-- 6. 层级优化，防止UI被Delta其他脚本遮挡
+-- 7. 无HTTP、无外部依赖，Delta严格模式兼容
+
+return MainGui
