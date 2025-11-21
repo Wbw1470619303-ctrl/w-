@@ -1,0 +1,624 @@
+-- Fluent UI + 自动翻译功能 融合脚本
+-- 第一步：加载翻译核心模块
+local Translations = {
+    ["AxiosHub"] = "超级黑洞",
+    ["Lock"] = "锁定",
+    ["Main"] = "主界面",
+    ["Player Target"] = "玩家目标",
+    ["UI Settings"] = "UI设置",
+    ["Shape Controls"] = "形状控制",
+    ["Enable Shape"] = "启用形状",
+    ["Shape Type"] = "形状类型",
+    ["Fibonacci Sphere"] = "斐波那契球体",
+    ["Star"] = "星形",
+    ["Swastika"] = "卍字形",
+    ["Stack"] = "堆叠",
+    ["Size"] = "大小",
+    ["Rotation Speed"] = "旋转速度",
+    ["Distance from Player"] = "与玩家距离",
+    ["Logic"] = "逻辑",
+    ["Target Player"] = "目标玩家",
+    ["Follow Target"] = "跟随目标",
+    ["Select Player"] = "选择玩家",
+    ["Teleport to Target"] = "传送到目标",
+    ["Toggle"] = "切换",
+    ["version: 2.0"] = "版本：2.0",
+    -- 新增 Fluent UI 控件文本翻译（可选扩展）
+    ["Button"] = "按钮",
+    ["Toggle"] = "开关",
+    ["Slider"] = "滑动条",
+    ["Dropdown"] = "下拉菜单",
+    ["Colorpicker"] = "颜色选择器",
+    ["Keybind"] = "按键绑定",
+    ["Input"] = "输入框",
+    ["Paragraph"] = "段落文本"
+}
+
+-- 翻译核心函数
+local function translateText(text)
+    if not text or type(text) ~= "string" then return text end
+    -- 精确匹配翻译
+    if Translations[text] then
+        return Translations[text]
+    end
+    -- 模糊匹配翻译（包含目标文本的都替换）
+    for en, cn in pairs(Translations) do
+        if text:find(en) then
+            return text:gsub(en, cn)
+        end
+    end
+    return text
+end
+
+-- 全局翻译引擎初始化（移植核心逻辑）
+local function setupTranslationEngine()
+    local success, err = pcall(function()
+        -- 尝试通过元表劫持实现实时翻译（优先级最高）
+        local oldIndex = getrawmetatable(game).__newindex
+        setreadonly(getrawmetatable(game), false)
+        
+        getrawmetatable(game).__newindex = newcclosure(function(t, k, v)
+            -- 只翻译文本控件的 Text 属性
+            if (t:IsA("TextLabel") or t:IsA("TextButton") or t:IsA("TextBox")) and k == "Text" then
+                v = translateText(tostring(v))
+            end
+            return oldIndex(t, k, v)
+        end)
+        
+        setreadonly(getrawmetatable(game), true)
+        print("[翻译引擎] 元表劫持成功，实时翻译已启用")
+    end)
+
+    -- 降级方案：扫描已有控件 + 监听新控件（兼容所有环境）
+    if not success then
+        warn("[翻译引擎] 元表劫持失败，启用降级方案:", err)
+        
+        local translated = {}
+        -- 扫描并翻译已有文本控件
+        local function scanAndTranslate()
+            -- 翻译 CoreGui 中的控件
+            for _, gui in ipairs(game:GetService("CoreGui"):GetDescendants()) do
+                if (gui:IsA("TextLabel") or gui:IsA("TextButton") or gui:IsA("TextBox")) and not translated[gui] then
+                    pcall(function()
+                        local text = gui.Text
+                        if text and text ~= "" then
+                            local translatedText = translateText(text)
+                            if translatedText ~= text then
+                                gui.Text = translatedText
+                                translated[gui] = true
+                            end
+                        end
+                    end)
+                end
+            end
+            -- 翻译 PlayerGui 中的控件
+            local player = game:GetService("Players").LocalPlayer
+            if player and player:FindFirstChild("PlayerGui") then
+                for _, gui in ipairs(player.PlayerGui:GetDescendants()) do
+                    if (gui:IsA("TextLabel") or gui:IsA("TextButton") or gui:IsA("TextBox")) and not translated[gui] then
+                        pcall(function()
+                            local text = gui.Text
+                            if text and text ~= "" then
+                                local translatedText = translateText(text)
+                                if translatedText ~= text then
+                                    gui.Text = translatedText
+                                    translated[gui] = true
+                                end
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+
+        -- 监听新创建的文本控件
+        local function setupDescendantListener(parent)
+            parent.DescendantAdded:Connect(function(descendant)
+                if descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") then
+                    task.wait(0.1)
+                    pcall(function()
+                        local text = descendant.Text
+                        if text and text ~= "" then
+                            local translatedText = translateText(text)
+                            if translatedText ~= text then
+                                descendant.Text = translatedText
+                            end
+                        end)
+                    end)
+                end
+            end)
+        end
+
+        -- 启动监听
+        pcall(setupDescendantListener, game:GetService("CoreGui"))
+        local player = game:GetService("Players").LocalPlayer
+        if player and player:FindFirstChild("PlayerGui") then
+            pcall(setupDescendantListener, player.PlayerGui)
+        end
+
+        -- 定时扫描未翻译的控件
+        task.spawn(function()
+            while true do
+                scanAndTranslate()
+                task.wait(3)
+            end
+        end)
+    end
+end
+
+-- 第二步：加载 Fluent UI 及其插件（保留原有逻辑）
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+-- 第三步：启动翻译引擎（延迟2秒确保 UI 加载完成）
+task.wait(2)
+setupTranslationEngine()
+
+-- 第四步：创建 Fluent UI 窗口（保留原有所有功能）
+local Window = Fluent:CreateWindow({
+    Title = "Fluent UI 控件演示 " .. Fluent.Version,
+    SubTitle = "展示所有支持的UI控件 + 自动翻译功能",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(600, 500),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.RightControl
+})
+
+-- 定义所有标签页
+local Tabs = {
+    Welcome = Window:AddTab({ Title = "欢迎页面", Icon = "home" }),
+    BasicControls = Window:AddTab({ Title = "基础控件", Icon = "sliders" }),
+    AdvancedControls = Window:AddTab({ Title = "高级控件", Icon = "settings" }),
+    InputControls = Window:AddTab({ Title = "输入控件", Icon = "edit" }),
+    Settings = Window:AddTab({ Title = "设置", Icon = "settings" }),
+    Translation = Window:AddTab({ Title = "翻译设置", Icon = "language" }) -- 新增翻译设置标签页
+}
+
+local Options = Fluent.Options
+
+-- ==================== 原有标签页功能（完全保留）====================
+-- 欢迎页面
+do
+    Tabs.Welcome:AddParagraph({
+        Title = "🎯 Fluent UI 控件演示 + 自动翻译",
+        Content = "这个脚本展示了 Fluent UI 支持的所有控件类型，同时自动翻译全局文本。\n所有控件都只用于演示，翻译功能自动生效。"
+    })
+    Tabs.Welcome:AddParagraph({
+        Title = "📋 核心功能",
+        Content = "• 自动翻译：全局 TextLabel/TextButton/TextBox 文本\n• 支持精确匹配和模糊匹配\n• 兼容 Fluent UI 所有控件\n• 失败降级方案，确保功能可用"
+    })
+    Tabs.Welcome:AddButton({
+        Title = "测试通知系统",
+        Description = "点击发送测试通知",
+        Callback = function()
+            Fluent:Notify({
+                Title = "通知测试",
+                Content = "这是一个测试通知！",
+                SubContent = "通知系统工作正常 + 翻译功能已启用",
+                Duration = 5
+            })
+        end
+    })
+    Tabs.Welcome:AddButton({
+        Title = "测试对话框",
+        Description = "点击打开测试对话框",
+        Callback = function()
+            Window:Dialog({
+                Title = "对话框演示",
+                Content = "这是一个对话框组件演示。自动翻译功能已覆盖此文本。",
+                Buttons = {
+                    {
+                        Title = "确认",
+                        Callback = function()
+                            print("[对话框] 确认按钮被点击")
+                            Fluent:Notify({
+                                Title = "操作确认",
+                                Content = "确认操作已执行",
+                                Duration = 3
+                            })
+                        end
+                    },
+                    {
+                        Title = "取消",
+                        Callback = function()
+                            print("[对话框] 取消按钮被点击")
+                            Fluent:Notify({
+                                Title = "操作取消",
+                                Content = "操作已取消",
+                                Duration = 3
+                            })
+                        end
+                    },
+                    {
+                        Title = "中立",
+                        Callback = function()
+                            print("[对话框] 中立按钮被点击")
+                        end
+                    }
+                }
+            })
+        end
+    })
+end
+
+-- 基础控件标签页（完全保留原有功能）
+do
+    Tabs.BasicControls:AddParagraph({
+        Title = "基础控件演示",
+        Content = "这些是最常用的基础交互控件"
+    })
+    local DemoSwitch1 = Tabs.BasicControls:AddToggle("BasicToggle1", {
+        Title = "基础开关",
+        Description = "这是一个简单的开关控件",
+        Default = false
+    })
+    DemoSwitch1:OnChanged(function()
+        print("[开关1] 状态:", Options.BasicToggle1.Value)
+    end)
+    local DemoSwitch2 = Tabs.BasicControls:AddToggle("BasicToggle2", {
+        Title = "默认开启的开关",
+        Description = "这个开关默认是开启状态",
+        Default = true
+    })
+    DemoSwitch2:OnChanged(function()
+        print("[开关2] 状态:", Options.BasicToggle2.Value)
+    end)
+    local Slider1 = Tabs.BasicControls:AddSlider("BasicSlider1", {
+        Title = "基础滑动条",
+        Description = "拖动调整数值 (0-100)",
+        Default = 50,
+        Min = 0,
+        Max = 100,
+        Rounding = 1,
+        Callback = function(Value)
+            print("[滑动条1] 数值:", Value)
+        end
+    })
+    local Slider2 = Tabs.BasicControls:AddSlider("BasicSlider2", {
+        Title = "小数滑动条",
+        Description = "支持小数精度 (0.0-10.0)",
+        Default = 5.5,
+        Min = 0,
+        Max = 10,
+        Rounding = 1,
+        Callback = function(Value)
+            print("[滑动条2] 数值:", Value)
+        end
+    })
+    local Slider3 = Tabs.BasicControls:AddSlider("BasicSlider3", {
+        Title = "大范围滑动条",
+        Description = "大数值范围 (0-1000)",
+        Default = 250,
+        Min = 0,
+        Max = 1000,
+        Rounding = 0,
+        Callback = function(Value)
+            print("[滑动条3] 数值:", Value)
+        end
+    })
+    Tabs.BasicControls:AddButton({
+        Title = "主要按钮",
+        Description = "这是一个主要操作按钮",
+        Callback = function()
+            print("[按钮] 主要按钮被点击")
+            Fluent:Notify({
+                Title = "按钮点击",
+                Content = "主要按钮被点击了！",
+                Duration = 2
+            })
+        end
+    })
+    Tabs.BasicControls:AddButton({
+        Title = "次要按钮",
+        Description = "这是一个次要操作按钮",
+        Callback = function()
+            print("[按钮] 次要按钮被点击")
+        end
+    })
+end
+
+-- 高级控件标签页（完全保留原有功能）
+do
+    Tabs.AdvancedControls:AddParagraph({
+        Title = "高级控件演示",
+        Content = "这些是更复杂的交互控件"
+    })
+    local SingleDropdown = Tabs.AdvancedControls:AddDropdown("SingleDropdown", {
+        Title = "单选下拉菜单",
+        Description = "只能选择一个选项",
+        Values = {"选项A", "选项B", "选项C", "选项D", "选项E"},
+        Multi = false,
+        Default = "选项A",
+    })
+    SingleDropdown:OnChanged(function(Value)
+        print("[下拉菜单] 选择了:", Value)
+    end)
+    local MultiDropdown = Tabs.AdvancedControls:AddDropdown("MultiDropdown", {
+        Title = "多选下拉菜单",
+        Description = "可以选择多个选项",
+        Values = {"红色", "绿色", "蓝色", "黄色", "紫色", "橙色", "粉色"},
+        Multi = true,
+        Default = {"红色", "蓝色"},
+    })
+    MultiDropdown:OnChanged(function(Value)
+        local selected = {}
+        for option, enabled in pairs(Value) do
+            if enabled then
+                table.insert(selected, option)
+            end
+        end
+        print("[多选下拉] 选择了:", table.concat(selected, ", "))
+    end)
+    local BasicColorpicker = Tabs.AdvancedControls:AddColorpicker("BasicColorpicker", {
+        Title = "基础颜色选择器",
+        Description = "选择颜色",
+        Default = Color3.fromRGB(96, 205, 255)
+    })
+    BasicColorpicker:OnChanged(function()
+        print("[颜色选择器] 颜色:", Options.BasicColorpicker.Value)
+    end)
+    local TransparencyColorpicker = Tabs.AdvancedControls:AddColorpicker("TransparencyColorpicker", {
+        Title = "透明度颜色选择器",
+        Description = "可以调整颜色和透明度",
+        Transparency = 0.5,
+        Default = Color3.fromRGB(255, 100, 100)
+    })
+    TransparencyColorpicker:OnChanged(function()
+        print("[透明颜色] 颜色:", Options.TransparencyColorpicker.Value, "透明度:", Options.TransparencyColorpicker.Transparency)
+    end)
+    local ToggleKeybind = Tabs.AdvancedControls:AddKeybind("ToggleKeybind", {
+        Title = "切换模式按键",
+        Mode = "Toggle",
+        Default = "Q",
+        Callback = function(Value)
+            print("[按键绑定-切换] 状态:", Value)
+        end,
+        ChangedCallback = function(New)
+            print("[按键绑定] 按键改为:", New)
+        end
+    end)
+    local HoldKeybind = Tabs.AdvancedControls:AddKeybind("HoldKeybind", {
+        Title = "按住模式按键",
+        Mode = "Hold",
+        Default = "F",
+        Callback = function(Value)
+            print("[按键绑定-按住] 状态:", Value)
+        end
+    end)
+    local AlwaysKeybind = Tabs.AdvancedControls:AddKeybind("AlwaysKeybind", {
+        Title = "总是触发按键",
+        Mode = "Always",
+        Default = "G",
+        Callback = function(Value)
+            print("[按键绑定-总是] 状态:", Value)
+        end
+    })
+    task.spawn(function()
+        while task.wait(1) do
+            local toggleState = ToggleKeybind:GetState()
+            local holdState = HoldKeybind:GetState()
+            local alwaysState = AlwaysKeybind:GetState()
+            print(string.format("[按键状态] 切换:%s 按住:%s 总是:%s",
+                tostring(toggleState), tostring(holdState), tostring(alwaysState)))
+        end
+    end)
+end
+
+-- 输入控件标签页（完全保留原有功能）
+do
+    Tabs.InputControls:AddParagraph({
+        Title = "输入控件演示",
+        Content = "各种文本和数字输入控件"
+    })
+    local TextInput = Tabs.InputControls:AddInput("TextInput", {
+        Title = "文本输入框",
+        Default = "默认文本",
+        Placeholder = "在这里输入文字...",
+        Numeric = false,
+        Finished = false,
+        Callback = function(Value)
+            print("[文本输入] 内容:", Value)
+        end
+    })
+    local RealtimeInput = Tabs.InputControls:AddInput("RealtimeInput", {
+        Title = "实时文本输入",
+        Default = "",
+        Placeholder = "输入时实时触发...",
+        Numeric = false,
+        Finished = false,
+        Callback = function(Value)
+            print("[实时输入] 内容:", Value)
+        end
+    })
+    local NumericInput = Tabs.InputControls:AddInput("NumericInput", {
+        Title = "数字输入框",
+        Default = "100",
+        Placeholder = "只能输入数字...",
+        Numeric = true,
+        Finished = true,
+        Callback = function(Value)
+            print("[数字输入] 数值:", tonumber(Value))
+        end
+    })
+    local FinishedInput = Tabs.InputControls:AddInput("FinishedInput", {
+        Title = "完成时输入框",
+        Default = "",
+        Placeholder = "按回车完成输入...",
+        Numeric = false,
+        Finished = true,
+        Callback = function(Value)
+            print("[完成输入] 最终内容:", Value)
+            Fluent:Notify({
+                Title = "输入完成",
+                Content = "输入内容: " .. Value,
+                Duration = 3
+            })
+        end
+    })
+    Tabs.InputControls:AddParagraph({
+        Title = "输入提示",
+        Content = "注意观察控制台输出，可以看到不同输入方式的触发时机和内容。"
+    })
+    Tabs.InputControls:AddButton({
+        Title = "清空所有输入",
+        Description = "清空当前页面的所有输入框",
+        Callback = function()
+            TextInput:SetValue("")
+            RealtimeInput:SetValue("")
+            NumericInput:SetValue("")
+            FinishedInput:SetValue("")
+            print("[操作] 所有输入框已清空")
+            Fluent:Notify({
+                Title = "清空完成",
+                Content = "所有输入框内容已清空",
+                Duration = 2
+            })
+        end
+    })
+end
+
+-- 设置标签页（完全保留原有功能）
+do
+    Tabs.Settings:AddParagraph({
+        Title = "界面设置",
+        Content = "配置界面外观和行为"
+    })
+    local ThemeDropdown = Tabs.Settings:AddDropdown("InterfaceTheme", {
+        Title = "界面主题",
+        Description = "选择界面颜色主题",
+        Values = Fluent.Themes,
+        Multi = false,
+        Default = "Dark",
+    })
+    ThemeDropdown:OnChanged(function()
+        Fluent:SetTheme(Options.InterfaceTheme.Value)
+        print("[设置] 主题改为:", Options.InterfaceTheme.Value)
+    end)
+    local AcrylicToggle = Tabs.Settings:AddToggle("AcrylicToggle", {
+        Title = "毛玻璃效果",
+        Description = "启用/禁用背景模糊效果",
+        Default = true
+    })
+    AcrylicToggle:OnChanged(function()
+        Fluent:ToggleAcrylic(Options.AcrylicToggle.Value)
+        print("[设置] 毛玻璃效果:", Options.AcrylicToggle.Value)
+    end)
+    local TransparencyToggle = Tabs.Settings:AddToggle("TransparencyToggle", {
+        Title = "透明效果",
+        Description = "启用/禁用界面透明效果",
+        Default = true
+    })
+    TransparencyToggle:OnChanged(function()
+        Fluent:ToggleTransparency(Options.TransparencyToggle.Value)
+        print("[设置] 透明效果:", Options.TransparencyToggle.Value)
+    end)
+    Tabs.Settings:AddParagraph({
+        Title = "配置管理",
+        Content = "自动保存和加载界面设置"
+    })
+    SaveManager:SetLibrary(Fluent)
+    InterfaceManager:SetLibrary(Fluent)
+    SaveManager:IgnoreThemeSettings()
+    SaveManager:SetIgnoreIndexes({})
+    InterfaceManager:SetFolder("FluentDemo")
+    SaveManager:SetFolder("FluentDemo/" .. tostring(game.PlaceId))
+    InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+    SaveManager:BuildConfigSection(Tabs.Settings)
+    Tabs.Settings:AddButton({
+        Title = "重置控制台",
+        Description = "清空控制台输出（在开发者控制台中）",
+        Callback = function()
+            print("\n\n\n========== 控制台已清空 ==========\n\n\n")
+            Fluent:Notify({
+                Title = "控制台重置",
+                Content = "请查看开发者控制台",
+                Duration = 2
+            })
+        end
+    })
+end
+
+-- ==================== 新增：翻译设置标签页 ====================
+do
+    Tabs.Translation:AddParagraph({
+        Title = "🌐 自动翻译功能设置",
+        Content = "当前已加载 " .. #Translations .. " 条翻译规则\n支持全局文本控件自动翻译，包含：\n• CoreGui 系统控件\n• PlayerGui 游戏控件\n• Fluent UI 控件文本"
+    })
+
+    -- 手动触发翻译按钮
+    Tabs.Translation:AddButton({
+        Title = "手动触发翻译",
+        Description = "立即扫描并翻译所有未翻译的文本",
+        Callback = function()
+            local translatedCount = 0
+            local totalCount = 0
+            -- 扫描所有文本控件
+            local function countAndTranslate(parent)
+                for _, gui in ipairs(parent:GetDescendants()) do
+                    if gui:IsA("TextLabel") or gui:IsA("TextButton") or gui:IsA("TextBox") then
+                        totalCount = totalCount + 1
+                        local original = gui.Text
+                        local translated = translateText(original)
+                        if translated ~= original then
+                            gui.Text = translated
+                            translatedCount = translatedCount + 1
+                        end
+                    end
+                end
+            end
+            countAndTranslate(game:GetService("CoreGui"))
+            local player = game:GetService("Players").LocalPlayer
+            if player and player.PlayerGui then
+                countAndTranslate(player.PlayerGui)
+            end
+            Fluent:Notify({
+                Title = "翻译完成",
+                Content = "共扫描 " .. totalCount .. " 个文本控件，翻译 " .. translatedCount .. " 个",
+                Duration = 3
+            })
+        end
+    })
+
+    -- 查看翻译列表按钮
+    Tabs.Translation:AddButton({
+        Title = "查看翻译列表",
+        Description = "在控制台打印所有翻译规则",
+        Callback = function()
+            print("\n\n========== 翻译规则列表 ==========")
+            for en, cn in pairs(Translations) do
+                print(string.format("%-20s → %s", en, cn))
+            end
+            print("================================\n\n")
+            Fluent:Notify({
+                Title = "列表已打印",
+                Content = "请查看开发者控制台 (F9)",
+                Duration = 2
+            })
+        end
+    })
+end
+
+-- ==================== 脚本初始化 ====================
+do
+    Window:SelectTab(1)
+    SaveManager:LoadAutoloadConfig()
+    -- 启动欢迎通知（包含翻译功能提示）
+    Fluent:Notify({
+        Title = "🚀 控件演示 + 自动翻译已加载",
+        Content = "所有UI控件演示准备就绪！自动翻译功能已启用",
+        SubContent = "打开开发者控制台 (F9) 查看输出 | 按 RightControl 隐藏/显示界面",
+        Duration = 8
+    })
+    print("==========================================")
+    print("      Fluent UI 控件演示 + 自动翻译脚本")
+    print("==========================================")
+    print("翻译功能：已加载 " .. #Translations .. " 条规则")
+    print("所有控件的交互都会在这里显示输出")
+    print("按 RightControl 键隐藏/显示界面")
+    print("==========================================")
+end
+
+-- 返回融合后的对象
+return {Fluent = Fluent, Translations = Translations}
