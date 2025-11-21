@@ -1,0 +1,628 @@
+-- 无HTTP请求版：原生GUI + 翻译功能（完全离线）
+-- 核心改动：1. 移除所有HTTP请求 2. 原生GUI重构 3. 保留翻译核心 4. 零外部依赖
+
+-- ==================== 1. 基础工具函数 ====================
+local function safeGetService(name)
+    local success, service = pcall(function()
+        return game:GetService(name)
+    end)
+    return success and service or nil
+end
+
+-- 关键服务（离线可用）
+local Players = safeGetService("Players")
+local CoreGui = safeGetService("CoreGui")
+local RunService = safeGetService("RunService")
+local UserInputService = safeGetService("UserInputService")
+local LocalPlayer = Players and Players.LocalPlayer or nil
+local UIParent = gethui() or CoreGui
+
+-- ==================== 2. 翻译模块（完全离线）====================
+local Translations = {
+    ["AxiosHub"] = "超级黑洞",
+    ["Lock"] = "锁定",
+    ["Main"] = "主界面",
+    ["Player Target"] = "玩家目标",
+    ["UI Settings"] = "UI设置",
+    ["Shape Controls"] = "形状控制",
+    ["Enable Shape"] = "启用形状",
+    ["Shape Type"] = "形状类型",
+    ["Fibonacci Sphere"] = "斐波那契球体",
+    ["Star"] = "星形",
+    ["Swastika"] = "卍字形",
+    ["Stack"] = "堆叠",
+    ["Size"] = "大小",
+    ["Rotation Speed"] = "旋转速度",
+    ["Distance from Player"] = "与玩家距离",
+    ["Logic"] = "逻辑",
+    ["Target Player"] = "目标玩家",
+    ["Follow Target"] = "跟随目标",
+    ["Select Player"] = "选择玩家",
+    ["Teleport to Target"] = "传送到目标",
+    ["Toggle"] = "切换",
+    ["version: 2.0"] = "版本：2.0",
+    ["测试通知"] = "测试通知",
+    ["通知功能正常"] = "通知功能正常",
+    ["基础开关"] = "基础开关",
+    ["简单开关控件"] = "简单开关控件",
+    ["基础滑动条"] = "基础滑动条",
+    ["测试按钮"] = "测试按钮",
+    ["按钮点击"] = "按钮点击",
+    ["按钮功能正常"] = "按钮功能正常",
+    ["单选下拉菜单"] = "单选下拉菜单",
+    ["颜色选择器"] = "颜色选择器",
+    ["文本输入框"] = "文本输入框",
+    ["输入文字..."] = "输入文字...",
+    ["翻译功能"] = "翻译功能",
+    ["触发UI翻译"] = "触发UI翻译",
+    ["已翻译Fluent UI控件文本"] = "已翻译原生UI控件文本",
+    ["测试翻译关键词"] = "测试翻译关键词",
+    ["翻译测试"] = "翻译测试"
+}
+
+-- 翻译函数
+local function translateText(text)
+    return Translations[text] or text
+end
+
+-- ==================== 3. 原生GUI核心（无外部依赖）====================
+local MainGui = Instance.new("ScreenGui")
+MainGui.Name = "OfflineGUITranslation"
+if syn and syn.protect_gui then
+    syn.protect_gui(MainGui)
+end
+MainGui.Parent = UIParent
+
+-- 主窗口
+local MainWindow = Instance.new("Frame")
+MainWindow.Name = "MainWindow"
+MainWindow.Size = UDim2.fromOffset(600, 500)
+MainWindow.Position = UDim2.new(0.5, -300, 0.5, -250)
+MainWindow.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainWindow.BorderSizePixel = 0
+MainWindow.Visible = true
+
+-- 窗口圆角
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainWindow
+
+-- 窗口阴影
+local Shadow = Instance.new("ImageLabel")
+Shadow.Name = "Shadow"
+Shadow.Size = UDim2.new(1, 10, 1, 10)
+Shadow.Position = UDim2.new(0, -5, 0, -5)
+Shadow.BackgroundTransparency = 1
+Shadow.Image = "rbxassetid://10480743857"
+Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+Shadow.ImageTransparency = 0.8
+Shadow.ScaleType = Enum.ScaleType.Slice
+Shadow.SliceCenter = Rect.new(10, 10, 90, 90)
+Shadow.Parent = MainWindow
+
+-- 标题栏
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+TitleBar.Parent = MainWindow
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Name = "TitleText"
+TitleText.Size = UDim2.new(1, -20, 1, 0)
+TitleText.Position = UDim2.new(0, 10, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = translateText("原生GUI + 翻译功能")
+TitleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleText.TextSize = 18
+TitleText.Font = Enum.Font.GothamBold
+TitleText.Parent = TitleBar
+
+-- 标签页容器
+local TabContainer = Instance.new("Frame")
+TabContainer.Name = "TabContainer"
+TabContainer.Size = UDim2.new(0, 160, 1, -40)
+TabContainer.Position = UDim2.new(0, 0, 0, 40)
+TabContainer.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TabContainer.Parent = MainWindow
+
+-- 内容容器
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Name = "ContentContainer"
+ContentContainer.Size = UDim2.new(1, -160, 1, -40)
+ContentContainer.Position = UDim2.new(0, 160, 0, 40)
+ContentContainer.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ContentContainer.Parent = MainWindow
+
+-- ==================== 4. 标签页系统（原生实现）====================
+local Tabs = {}
+local currentTab = nil
+
+-- 创建标签页函数
+local function createTab(name, iconText, callback)
+    local TabButton = Instance.new("TextButton")
+    TabButton.Name = name
+    TabButton.Size = UDim2.new(1, 0, 0, 50)
+    TabButton.Position = UDim2.new(0, 0, 0, (#Tabs * 50))
+    TabButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    TabButton.Text = ""
+    TabButton.MouseButton1Click:Connect(function()
+        -- 切换标签页样式
+        for _, tab in ipairs(Tabs) do
+            tab.Button.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        end
+        TabButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        -- 清空内容容器
+        for _, child in ipairs(ContentContainer:GetChildren()) do
+            child:Destroy()
+        end
+        -- 执行标签页回调
+        callback(ContentContainer)
+        currentTab = name
+    end)
+    TabButton.Parent = TabContainer
+
+    -- 标签图标
+    local IconLabel = Instance.new("TextLabel")
+    IconLabel.Size = UDim2.new(0, 24, 0, 24)
+    IconLabel.Position = UDim2.new(0, 15, 0.5, -12)
+    IconLabel.BackgroundTransparency = 1
+    IconLabel.Text = iconText
+    IconLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    IconLabel.TextSize = 16
+    IconLabel.Parent = TabButton
+
+    -- 标签文本
+    local TabText = Instance.new("TextLabel")
+    TabText.Size = UDim2.new(1, -50, 0, 20)
+    TabText.Position = UDim2.new(0, 45, 0.5, -10)
+    TabText.BackgroundTransparency = 1
+    TabText.Text = translateText(name)
+    TabText.TextColor3 = Color3.fromRGB(200, 200, 200)
+    TabText.TextSize = 14
+    TabText.Parent = TabButton
+
+    table.insert(Tabs, {Name = name, Button = TabButton})
+    return TabButton
+end
+
+-- ==================== 5. 控件创建工具（原生实现）====================
+local UIUtils = {
+    -- 创建段落文本
+    createParagraph = function(parent, title, content)
+        local ParagraphFrame = Instance.new("Frame")
+        ParagraphFrame.Size = UDim2.new(1, -40, 0, 80)
+        ParagraphFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 90)
+        ParagraphFrame.BackgroundTransparency = 1
+        ParagraphFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, 0, 0, 20)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 16
+        TitleLabel.Font = Enum.Font.GothamBold
+        TitleLabel.Parent = ParagraphFrame
+
+        local ContentLabel = Instance.new("TextLabel")
+        ContentLabel.Size = UDim2.new(1, 0, 0, 60)
+        ContentLabel.Position = UDim2.new(0, 0, 0, 20)
+        ContentLabel.BackgroundTransparency = 1
+        ContentLabel.Text = translateText(content)
+        ContentLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        ContentLabel.TextSize = 12
+        ContentLabel.TextWrapped = true
+        ContentLabel.Parent = ParagraphFrame
+
+        return ParagraphFrame
+    end,
+
+    -- 创建按钮
+    createButton = function(parent, title, callback)
+        local Button = Instance.new("TextButton")
+        Button.Size = UDim2.new(1, -40, 0, 40)
+        Button.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        Button.BorderSizePixel = 0
+        Button.Text = translateText(title)
+        Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        Button.TextSize = 14
+        Button.MouseButton1Click:Connect(callback)
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = Button
+
+        Button.Parent = parent
+        return Button
+    end,
+
+    -- 创建开关
+    createToggle = function(parent, title, default)
+        local ToggleFrame = Instance.new("Frame")
+        ToggleFrame.Size = UDim2.new(1, -40, 0, 40)
+        ToggleFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        ToggleFrame.BackgroundTransparency = 1
+        ToggleFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -60, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = ToggleFrame
+
+        local ToggleButton = Instance.new("TextButton")
+        ToggleButton.Size = UDim2.new(0, 40, 0, 20)
+        ToggleButton.Position = UDim2.new(1, -50, 0.5, -10)
+        ToggleButton.BackgroundColor3 = default and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(70, 70, 70)
+        ToggleButton.BorderSizePixel = 0
+        ToggleButton.Text = default and "开" or "关"
+        ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleButton.TextSize = 12
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 10)
+        Corner.Parent = ToggleButton
+
+        local isOn = default
+        ToggleButton.MouseButton1Click:Connect(function()
+            isOn = not isOn
+            ToggleButton.BackgroundColor3 = isOn and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(70, 70, 70)
+            ToggleButton.Text = isOn and "开" or "关"
+        end)
+
+        ToggleButton.Parent = ToggleFrame
+        return {Frame = ToggleFrame, IsOn = function() return isOn end}
+    end,
+
+    -- 创建滑动条
+    createSlider = function(parent, title, min, max, default)
+        local SliderFrame = Instance.new("Frame")
+        SliderFrame.Size = UDim2.new(1, -40, 0, 40)
+        SliderFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        SliderFrame.BackgroundTransparency = 1
+        SliderFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(0, 100, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = SliderFrame
+
+        local SliderBar = Instance.new("Frame")
+        SliderBar.Size = UDim2.new(1, -150, 0, 4)
+        SliderBar.Position = UDim2.new(0, 120, 0.5, -2)
+        SliderBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        SliderBar.Parent = SliderFrame
+
+        local SliderHandle = Instance.new("Frame")
+        local handlePos = (default - min) / (max - min)
+        SliderHandle.Size = UDim2.new(0, 16, 0, 16)
+        SliderHandle.Position = UDim2.new(handlePos, -8, 0.5, -8)
+        SliderHandle.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+        SliderHandle.Parent = SliderBar
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(1, 0)
+        Corner.Parent = SliderHandle
+
+        local ValueLabel = Instance.new("TextLabel")
+        ValueLabel.Size = UDim2.new(0, 30, 1, 0)
+        ValueLabel.Position = UDim2.new(1, -30, 0, 0)
+        ValueLabel.BackgroundTransparency = 1
+        ValueLabel.Text = tostring(default)
+        ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ValueLabel.TextSize = 14
+        ValueLabel.Parent = SliderFrame
+
+        local currentValue = default
+        SliderHandle.Draggable = true
+        SliderHandle.DragStart:Connect(function()
+            SliderHandle.DragEnd:Connect(function()
+                local pos = SliderHandle.Position.X.Scale
+                pos = math.clamp(pos, 0, 1)
+                currentValue = math.floor(pos * (max - min) + min)
+                ValueLabel.Text = tostring(currentValue)
+                SliderHandle.Position = UDim2.new(pos, -8, 0.5, -8)
+            end)
+        end)
+
+        return {Frame = SliderFrame, GetValue = function() return currentValue end}
+    end,
+
+    -- 创建下拉菜单
+    createDropdown = function(parent, title, options, default)
+        local DropdownFrame = Instance.new("Frame")
+        DropdownFrame.Size = UDim2.new(1, -40, 0, 40)
+        DropdownFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        DropdownFrame.BackgroundTransparency = 1
+        DropdownFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -120, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = DropdownFrame
+
+        local DropdownButton = Instance.new("TextButton")
+        DropdownButton.Size = UDim2.new(0, 100, 0, 30)
+        DropdownButton.Position = UDim2.new(1, -110, 0.5, -15)
+        DropdownButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        DropdownButton.BorderSizePixel = 0
+        DropdownButton.Text = translateText(default)
+        DropdownButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        DropdownButton.TextSize = 12
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = DropdownButton
+
+        local currentOption = default
+        DropdownButton.MouseButton1Click:Connect(function()
+            -- 显示选项菜单
+            local OptionMenu = Instance.new("Frame")
+            OptionMenu.Size = UDim2.new(0, 100, 0, #options * 30)
+            OptionMenu.Position = UDim2.new(1, -110, 1, 5)
+            OptionMenu.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            OptionMenu.Parent = DropdownFrame
+
+            local Corner = Instance.new("UICorner")
+            Corner.CornerRadius = UDim.new(0, 6)
+            Corner.Parent = OptionMenu
+
+            for i, option in ipairs(options) do
+                local OptionButton = Instance.new("TextButton")
+                OptionButton.Size = UDim2.new(1, 0, 0, 30)
+                OptionButton.Position = UDim2.new(0, 0, 0, (i-1)*30)
+                OptionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+                OptionButton.BorderSizePixel = 0
+                OptionButton.Text = translateText(option)
+                OptionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+                OptionButton.TextSize = 12
+                OptionButton.MouseButton1Click:Connect(function()
+                    currentOption = option
+                    DropdownButton.Text = translateText(option)
+                    OptionMenu:Destroy()
+                end)
+                OptionButton.Parent = OptionMenu
+            end
+
+            -- 点击其他地方关闭菜单
+            local closeConn
+            closeConn = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    OptionMenu:Destroy()
+                    closeConn:Disconnect()
+                end
+            end)
+        end)
+
+        DropdownButton.Parent = DropdownFrame
+        return {Frame = DropdownFrame, GetValue = function() return currentOption end}
+    end,
+
+    -- 创建颜色选择器（简化版）
+    createColorpicker = function(parent, title, defaultColor)
+        local ColorFrame = Instance.new("Frame")
+        ColorFrame.Size = UDim2.new(1, -40, 0, 40)
+        ColorFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        ColorFrame.BackgroundTransparency = 1
+        ColorFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -80, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = ColorFrame
+
+        local ColorButton = Instance.new("TextButton")
+        ColorButton.Size = UDim2.new(0, 30, 0, 30)
+        ColorButton.Position = UDim2.new(1, -70, 0.5, -15)
+        ColorButton.BackgroundColor3 = defaultColor
+        ColorButton.BorderSizePixel = 0
+        ColorButton.Text = ""
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = ColorButton
+
+        local currentColor = defaultColor
+        ColorButton.MouseButton1Click:Connect(function()
+            -- 简化颜色选择：切换预设颜色
+            local colors = {
+                Color3.fromRGB(255, 0, 0),
+                Color3.fromRGB(0, 255, 0),
+                Color3.fromRGB(0, 0, 255),
+                Color3.fromRGB(255, 255, 0),
+                Color3.fromRGB(255, 0, 255),
+                Color3.fromRGB(0, 255, 255),
+                Color3.fromRGB(255, 255, 255)
+            }
+            local currentIdx = 1
+            for i, col in ipairs(colors) do
+                if col == currentColor then
+                    currentIdx = i
+                    break
+                end
+            end
+            currentIdx = currentIdx % #colors + 1
+            currentColor = colors[currentIdx]
+            ColorButton.BackgroundColor3 = currentColor
+        end)
+
+        ColorButton.Parent = ColorFrame
+        return {Frame = ColorFrame, GetColor = function() return currentColor end}
+    end,
+
+    -- 创建输入框
+    createInput = function(parent, title, placeholder)
+        local InputFrame = Instance.new("Frame")
+        InputFrame.Size = UDim2.new(1, -40, 0, 40)
+        InputFrame.Position = UDim2.new(0, 20, 0, #parent:GetChildren() * 50)
+        InputFrame.BackgroundTransparency = 1
+        InputFrame.Parent = parent
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(0, 100, 1, 0)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 14
+        TitleLabel.Parent = InputFrame
+
+        local InputBox = Instance.new("TextBox")
+        InputBox.Size = UDim2.new(1, -110, 0, 30)
+        InputBox.Position = UDim2.new(0, 100, 0.5, -15)
+        InputBox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        InputBox.BorderSizePixel = 0
+        InputBox.PlaceholderText = translateText(placeholder)
+        InputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+        InputBox.Text = ""
+        InputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        InputBox.TextSize = 14
+        InputBox.ClearTextOnFocus = false
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = InputBox
+
+        InputBox.Parent = InputFrame
+        return {Frame = InputFrame, GetText = function() return InputBox.Text end}
+    end,
+
+    -- 显示通知
+    showNotification = function(title, content, duration)
+        local Notification = Instance.new("Frame")
+        Notification.Size = UDim2.new(0, 300, 0, 60)
+        Notification.Position = UDim2.new(1, -320, 1, -80)
+        Notification.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        Notification.Parent = MainGui
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 8)
+        Corner.Parent = Notification
+
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Size = UDim2.new(1, -20, 0, 20)
+        TitleLabel.Position = UDim2.new(0, 10, 0, 10)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = translateText(title)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLabel.TextSize = 16
+        TitleLabel.Font = Enum.Font.GothamBold
+        TitleLabel.Parent = Notification
+
+        local ContentLabel = Instance.new("TextLabel")
+        ContentLabel.Size = UDim2.new(1, -20, 0, 20)
+        TitleLabel.Position = UDim2.new(0, 10, 0, 30)
+        ContentLabel.BackgroundTransparency = 1
+        ContentLabel.Text = translateText(content)
+        ContentLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+        ContentLabel.TextSize = 12
+        ContentLabel.Parent = Notification
+
+        task.wait(duration or 3)
+        Notification:Destroy()
+    end
+}
+
+-- ==================== 6. 标签页内容实现 ====================
+-- 欢迎页面
+createTab("欢迎页面", "🏠", function(contentParent)
+    UIUtils.createParagraph(contentParent, "🎯 原生GUI + 翻译功能", "完全离线可用，无HTTP请求\n所有控件原生实现，支持翻译功能\n按 RightControl 键隐藏/显示界面")
+    UIUtils.createButton(contentParent, "测试通知", function()
+        UIUtils.showNotification("测试", "通知功能正常", 3)
+    end)
+end)
+
+-- 基础控件页面
+createTab("基础控件", "⚙️", function(contentParent)
+    UIUtils.createToggle(contentParent, "基础开关", false)
+    UIUtils.createSlider(contentParent, "基础滑动条", 0, 100, 50)
+    UIUtils.createButton(contentParent, "测试按钮", function()
+        UIUtils.showNotification("按钮点击", "按钮功能正常", 2)
+    end)
+end)
+
+-- 高级控件页面
+createTab("高级控件", "🔧", function(contentParent)
+    UIUtils.createDropdown(contentParent, "单选下拉菜单", {"选项A", "选项B", "选项C"}, "选项A")
+    UIUtils.createColorpicker(contentParent, "颜色选择器", Color3.fromRGB(96, 205, 255))
+end)
+
+-- 输入控件页面
+createTab("输入控件", "📝", function(contentParent)
+    UIUtils.createInput(contentParent, "文本输入框", "输入文字...")
+end)
+
+-- 翻译设置页面
+createTab("翻译设置", "🌐", function(contentParent)
+    UIUtils.createParagraph(contentParent, "翻译功能", "已加载 " .. #Translations .. " 条翻译规则\n仅翻译指定关键词，无全局冲突")
+    
+    -- 触发翻译按钮
+    UIUtils.createButton(contentParent, "触发UI翻译", function()
+        -- 翻译所有UI文本
+        local function translateAllUI(parent)
+            for _, child in ipairs(parent:GetChildren()) do
+                if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                    if child.Text ~= "" then
+                        child.Text = translateText(child.Text)
+                    end
+                    if child:IsA("TextBox") and child.PlaceholderText ~= "" then
+                        child.PlaceholderText = translateText(child.PlaceholderText)
+                    end
+                end
+                translateAllUI(child)
+            end
+        end
+        translateAllUI(MainGui)
+        UIUtils.showNotification("翻译完成", "已翻译原生UI控件文本", 2)
+    end)
+
+    -- 测试翻译按钮
+    UIUtils.createButton(contentParent, "测试翻译关键词", function()
+        local testText = "AxiosHub"
+        local translated = translateText(testText)
+        UIUtils.showNotification("翻译测试", testText .. " → " .. translated, 3)
+    end)
+end)
+
+-- ==================== 7. 快捷键控制（显示/隐藏）====================
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.RightControl then
+        MainWindow.Visible = not MainWindow.Visible
+    end
+end)
+
+-- ==================== 8. 初始化显示 ====================
+MainWindow.Parent = MainGui
+-- 默认选中第一个标签页
+if #Tabs > 0 then
+    Tabs[1].Button:FireMouseButton1Click()
+end
+
+-- 启动通知
+UIUtils.showNotification("🚀 脚本加载成功", "无HTTP请求，完全离线可用", 5)
+
+-- 打印初始化信息
+print("=================================")
+print("原生GUI + 翻译脚本 已加载（无HTTP）")
+print("翻译规则数:", #Translations)
+print("快捷键: RightControl（显示/隐藏）")
+print("=================================")
+
+-- ==================== 核心特点 ====================
+-- 1. 零HTTP请求：无任何网络依赖，完全离线运行
+-- 2. 原生GUI：纯Roblox Instance创建，不依赖外部库
+-- 3. 功能完整：保留开关、滑动条、下拉菜单等核心控件
+-- 4. 翻译生效：所有UI文本支持翻译，可扩展翻译规则
+-- 5. 兼容性强：Delta注入器/普通执行器均可直接运行
