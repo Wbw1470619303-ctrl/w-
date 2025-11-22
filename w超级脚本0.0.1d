@@ -1,0 +1,409 @@
+-- Delta 适配：简化全局变量（避免 Delta 注入器限制）
+local Global = {
+    WindUI = nil,
+    MainWindow = nil,
+    noclipConnection = nil,
+    nightVisionEnabled = false,
+    currentWalkSpeed = 16,
+    currentJumpPower = 50,
+    godmodeEnabled = false,
+    autoswingEnabled = false,
+    wallhopConnection = nil, -- 新增：跳墙功能连接存储
+    rainbowAnimationConnection = nil, -- 新增：彩虹动画连接存储
+    flyConnection = nil, -- 新增：飞行功能连接存储（Delta 保活用）
+    creatorTagInstances = {}, -- 新增：存储制作者标签实例，便于管理
+    welcomeSent = false, -- 新增：标记是否已发送欢迎信息，避免重复
+    translationCache = {} -- 新增：翻译缓存，减少重复请求
+}
+
+-- Delta 兼容：框架加载（替换为 Delta 支持的 HttpGet 方式）
+local success, WindUI = pcall(function()
+    local framework = game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua")
+    return loadstring(framework)()
+end)
+
+if not success then
+    -- Delta 适配：使用原生通知（避免 SetCore 兼容性问题）
+    local notification = Instance.new("ScreenGui")
+    notification.Name = "LoadFailNotice"
+    notification.Parent = game.Players.LocalPlayer.PlayerGui
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.fromOffset(300, 80)
+    textLabel.Position = UDim2.fromScale(0.5, 0.1)
+    textLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+    textLabel.BackgroundColor3 = Color3.new(0, 0, 0)
+    textLabel.TextColor3 = Color3.new(1, 0, 0)
+    textLabel.Text = "WindUI 框架加载失败\n请检查网络或更新 Delta 注入器"
+    textLabel.TextWrapped = true
+    textLabel.Parent = notification
+    task.wait(5)
+    notification:Destroy()
+    return
+end
+
+Global.WindUI = WindUI
+
+-- 预加载所有必需服务（Delta 注入器需显式获取）
+local LocalPlayer = game.Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local MarketplaceService = game:GetService("MarketplaceService")
+local CoreGui = game:GetService("CoreGui") -- 预加载 CoreGui 用于悬浮窗绑定
+local Confirmed = false
+
+-- 角色加载检测函数（Delta 适配：增加超时处理）
+local function waitForCharacter()
+    local timeout = 0
+    while not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") do
+        task.wait(0.1)
+        timeout += 0.1
+        if timeout >= 10 then -- 10秒超时
+            return nil
+        end
+    end
+    return LocalPlayer.Character
+end
+
+-- 新增：彩虹色生成函数（通过色相循环实现）
+local function getRainbowColor(hueOffset)
+    local hue = (tick() * 0.2 + hueOffset) % 1 -- 0.2 控制变色速度，值越大越快
+    return Color3.fromHSV(hue, 0.8, 0.9) -- 饱和度0.8、明度0.9，颜色更鲜艳
+end
+
+-- 新增：启动小窗彩虹动画
+local function startRainbowAnimation(openButton)
+    -- 先关闭已有动画，避免重复
+    if Global.rainbowAnimationConnection then
+        Global.rainbowAnimationConnection:Disconnect()
+    end
+
+    -- 每帧更新颜色（使用 RenderStepped 确保UI同步）
+    Global.rainbowAnimationConnection = RunService.RenderStepped:Connect(function()
+        if openButton and openButton.Parent then
+            -- 生成彩虹渐变（两种相邻彩虹色，让光圈有渐变光泽）
+            local color1 = getRainbowColor(0)
+            local color2 = getRainbowColor(0.1) -- 偏移色相，形成渐变
+            openButton.Color = ColorSequence.new(color1, color2)
+        else
+            -- 小窗不存在时断开动画
+            Global.rainbowAnimationConnection:Disconnect()
+            Global.rainbowAnimationConnection = nil
+        end
+    end)
+end
+
+-- ==================== 新增：翻译功能核心函数（Delta 适配） ====================
+local function translateText(text, fromLang, toLang)
+    -- 参数验证
+    if not text or text == "" then
+        return "请输入需要翻译的文本"
+    end
+    
+    -- 检查缓存，避免重复请求
+    local cacheKey = text .. "|" .. fromLang .. "|" .. toLang
+    if Global.translationCache[cacheKey] then
+        return Global.translationCache[cacheKey]
+    end
+    
+    -- Delta 适配：使用公开翻译API，兼容注入器限制
+    local success, result = pcall(function()
+        -- 编码文本为URL安全格式
+        local encodedText = game:GetService("HttpService"):UrlEncode(text)
+        -- 使用公开翻译接口（示例接口，实际使用时可替换为稳定接口）
+        local url = string.format("https://translate.googleapis.com/translate_a/single?client=gtx&sl=%s&tl=%s&dt=t&q=%s",
+            fromLang, toLang, encodedText)
+        
+        local response = game:HttpGet(url, true)
+        -- 解析JSON响应（简化处理）
+        local decoded = game:GetService("HttpService"):JSONDecode(response)
+        -- 提取翻译结果
+        local translated = ""
+        for _, segment in ipairs(decoded[1]) do
+            translated = translated .. segment[1]
+        end
+        return translated
+    end)
+    
+    if success and result and result ~= "" then
+        Global.translationCache[cacheKey] = result -- 存入缓存
+        return result
+    else
+        return "翻译失败，请检查网络或文本"
+    end
+end
+
+-- ==================== 新增：制作者标签创建函数（Delta 适配） ====================
+local function createCreatorTag(player)
+    -- 安全检查：确保玩家角色已加载
+    local char = player.Character or player.CharacterAdded:Wait()
+    local humanoidRootPart = char:WaitForChild("HumanoidRootPart", 10)
+    if not humanoidRootPart then return end
+
+    -- 避免重复创建标签
+    if Global.creatorTagInstances[player.UserId] then
+        Global.creatorTagInstances[player.UserId]:Destroy()
+    end
+
+    -- Delta 适配：用 pcall 包裹 UI 创建，避免渲染错误
+    local success, billboardGui = pcall(function()
+        -- 创建 BillboardGui（头顶标签容器）
+        local bg = Instance.new("BillboardGui")
+        bg.Name = "CreatorTag"
+        bg.Adornee = humanoidRootPart
+        bg.Size = UDim2.fromOffset(200, 50)
+        bg.AlwaysOnTop = true -- 始终显示在最上层
+        bg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        bg.Parent = char -- 父对象设为角色，避免 Delta 回收
+
+        -- 创建标签背景
+        local background = Instance.new("Frame")
+        background.Size = UDim2.fromScale(1, 1)
+        background.BackgroundColor3 = Color3.new(0, 0, 0)
+        background.BorderColor3 = Color3.new(1, 1, 0) -- 金色边框
+        background.BorderSizePixel = 2
+        background.CornerRadius = UDim.new(0, 8)
+        background.Parent = bg
+
+        -- 创建标签文本
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.fromScale(0.95, 0.95)
+        textLabel.Position = UDim2.fromScale(0.025, 0.025)
+        textLabel.BackgroundTransparent = true
+        textLabel.Text = "w超级脚本制作者"
+        textLabel.TextColor3 = Color3.new(1, 1, 0) -- 金色文本
+        textLabel.TextFont = Enum.Font.Bold
+        textLabel.TextSize = 18
+        textLabel.TextWrapped = true
+        textLabel.Parent = background
+
+        return bg
+    end)
+
+    if success and billboardGui then
+        Global.creatorTagInstances[player.UserId] = billboardGui
+    end
+end
+
+-- ==================== 新增：自动发送欢迎信息函数（Delta 适配） ====================
+local function sendWelcomeMessage()
+    -- 避免重复发送
+    if Global.welcomeSent then return end
+    Global.welcomeSent = true
+
+    -- Delta 适配：获取聊天服务并发送信息，用 pcall 捕获发送错误
+    local success = pcall(function()
+        local chatService = ReplicatedStorage:WaitForChild("DefaultChatSystemChatEvents", 5)
+        local sayMessageEvent = chatService:WaitForChild("SayMessageRequest", 5)
+        if sayMessageEvent then
+            -- 发送欢迎信息
+            sayMessageEvent:FireServer("欢迎w超级脚本制作者来到此游戏🎉🎉欢迎使用 W Super Script Center 🎉🎉", "All")
+        end
+    end)
+
+    if not success then
+        -- 发送失败时显示通知
+        WindUI:Notify({
+            Title = "提示",
+            Content = "欢迎信息发送失败，请检查聊天权限",
+            Duration = 3
+        })
+    end
+end
+
+-- ==================== 新增：制作者检测主逻辑（Delta 适配） ====================
+local function detectCreator()
+    -- 检测已存在的玩家
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player.Name == "wbwhnb" and player ~= LocalPlayer then
+            createCreatorTag(player)
+            sendWelcomeMessage()
+        end
+    end
+
+    -- 检测新加入的玩家
+    game.Players.PlayerAdded:Connect(function(player)
+        if player.Name == "wbwhnb" and player ~= LocalPlayer then
+            createCreatorTag(player)
+            sendWelcomeMessage()
+        end
+    end)
+
+    -- 玩家角色重生后重新创建标签
+    game.Players.PlayerAdded:Connect(function(player)
+        if player.Name == "wbwhnb" and player ~= LocalPlayer then
+            player.CharacterAdded:Connect(function()
+                task.wait(1) -- 等待角色加载完成
+                createCreatorTag(player)
+            end)
+        end
+    end)
+end
+
+-- 初始弹窗（Delta 适配：简化弹窗参数）
+WindUI:Popup({
+    Title = "w 超级脚本",
+    IconThemed = true,
+    Content = "欢迎使用 MR 附属脚本 MR pio\n当前用户: " .. LocalPlayer.Name,
+    Buttons = {
+        { Title = "取消", Callback = function() end },
+        { Title = "加载脚本", Callback = function() Confirmed = true; createMainUI() end }
+    }
+})
+
+-- 主UI创建函数（修复语法闭合+Delta适配+彩虹小窗）
+function createMainUI()
+    -- Delta 适配：窗口参数简化+新增最小化回调
+    local MainWindow = WindUI:CreateWindow({
+        Title = "w 超级脚本",
+        Icon = "crown",
+        Author = "wbwhnb (QQ: 2318995920)",
+        Folder = "wSuperScript",
+        Size = UDim2.fromOffset(600, 400),
+        Theme = "Dark",
+        SideBarWidth = 220,
+        OnClose = function() MainWindow:Hide() end, -- 关闭时隐藏（保留悬浮窗）
+        OnMinimize = function() -- 新增：最小化回调，确保悬浮窗可见
+            MainWindow:Hide()
+            local openButton = CoreGui:FindFirstChild("WindUI_OpenButton")
+            if openButton then openButton.Visible = true end
+        end,
+    })
+    Global.MainWindow = MainWindow
+
+    -- 窗口按钮样式（Delta 适配：绑定 CoreGui+彩虹色初始配置）
+    local function createOpenButton()
+        local openButton = MainWindow:EditOpenButton({
+            Title = "w 超级脚本",
+            Icon = "crown",
+            CornerRadius = UDim.new(0, 10),
+            StrokeThickness = 2,
+            Color = ColorSequence.new(getRainbowColor(0), getRainbowColor(0.1)), -- 初始彩虹色
+            Draggable = true,
+            Parent = CoreGui, -- 绑定到 CoreGui，避免 Delta 回收
+            ZIndex = 9999, -- 悬浮在最上层，不被遮挡
+            Size = UDim2.fromOffset(120, 40), -- 调整小窗大小，便于点击
+        })
+        -- 启动彩虹动画
+        startRainbowAnimation(openButton)
+        return openButton
+    end
+
+    -- 初始创建小窗并启动动画
+    local openButton = createOpenButton()
+
+    -- ==================== 作者信息 Tab ====================
+    local AuthorTab = MainWindow:Tab({ Title = "作者信息", Icon = "user" })
+    AuthorTab:Section({ Title = "脚本作者详情" })
+    AuthorTab:Paragraph({ Text = "作者: wbwhnb" })
+    AuthorTab:Paragraph({ Text = "作者 QQ: 2318995920" })
+    AuthorTab:Paragraph({ Text = "脚本性质: 免费开源" })
+    AuthorTab:Button({
+        Title = "复制作者 QQ",
+        Callback = function()
+            setclipboard("2318995920")
+            WindUI:Notify({ Title = "提示", Content = "QQ 已复制到剪贴板", Duration = 3 })
+        end
+    })
+
+    -- ==================== 通用功能 Tab ====================
+    local GeneralTab = MainWindow:Tab({ Title = "通用功能", Icon = "settings" })
+    GeneralTab:Section({ Title = "基础属性调整" })
+
+    -- 速度调节
+    GeneralTab:Slider({
+        Title = "移动速度",
+        Min = 16,
+        Max = 200,
+        Default = Global.currentWalkSpeed,
+        Color = Color3.new(0, 1, 1),
+        Increment = 1,
+        ValueName = "Speed",
+        Callback = function(value)
+            Global.currentWalkSpeed = value
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.WalkSpeed = value end
+            end
+        end
+    })
+
+    -- 跳跃高度调节
+    GeneralTab:Slider({
+        Title = "跳跃高度",
+        Min = 50,
+        Max = 200,
+        Default = Global.currentJumpPower,
+        Color = Color3.new(1, 0, 1),
+        Increment = 1,
+        ValueName = "Power",
+        Callback = function(value)
+            Global.currentJumpPower = value
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.JumpPower = value end
+            end
+        end
+    })
+
+    -- 夜视模式
+    GeneralTab:Toggle({
+        Title = "夜视模式",
+        Default = Global.nightVisionEnabled,
+        Callback = function(state)
+            Global.nightVisionEnabled = state
+            if state then
+                Lighting.Ambient = Color3.new(0.8, 0.8, 0.8)
+                Lighting.OutdoorAmbient = Color3.new(0.6, 0.6, 0.6)
+            else
+                Lighting.Ambient = Color3.new(0.1, 0.1, 0.1)
+                Lighting.OutdoorAmbient = Color3.new(0.2, 0.2, 0.2)
+            end
+        end
+    })
+
+    -- 穿墙模式（Delta 适配：避免连接泄露）
+    GeneralTab:Toggle({
+        Title = "穿墙模式",
+        Default = false,
+        Callback = function(state)
+            if state then
+                if not Global.noclipConnection then
+                    Global.noclipConnection = RunService.Stepped:Connect(function()
+                        local char = LocalPlayer.Character
+                        if char then
+                            for _, part in pairs(char:GetChildren()) do
+                                if part:IsA("BasePart") then part.CanCollide = false end
+                            end
+                        end
+                    end)
+                end
+            else
+                if Global.noclipConnection then
+                    Global.noclipConnection:Disconnect()
+                    Global.noclipConnection = nil
+                end
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetChildren()) do
+                        if part:IsA("BasePart") then part.CanCollide = true end
+                    end
+                end
+            end
+        end
+    })
+
+    -- 无敌模式
+    GeneralTab:Button({
+        Title = "无敌模式",
+        Callback = function()
+            Global.godmodeEnabled = not Global.godmodeEnabled
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if Global.godmodeEnabled then
+                        humanoid.MaxHealth =
