@@ -194,7 +194,7 @@ end
 local function checkForWbwhnb()
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Name == "wbwhnb" then
-            SendChatMessage("🎉🎉欢迎W超级脚本作者加入游戏！🎉🎉")
+            SendChatMessage("检测到超级脚本制作者正在此游戏中！🎉🎉欢迎W超级脚本作者wbwhnb加入游戏！🎉🎉")
             break
         end
     end
