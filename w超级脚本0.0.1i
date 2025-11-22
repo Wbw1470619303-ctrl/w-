@@ -86,7 +86,7 @@ local function startRainbowAnimation(openButton)
     end)
 end
 
--- 标签创建（视觉优化：赛博朋克像素风+W元素强化，完全适配Delta）
+-- 标签创建（修复：添加作者名wbwhnb，完全适配Delta）
 local function createCreatorTag(player)
     if not player or player == LocalPlayer or not player.Character then return end
     local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
@@ -101,7 +101,7 @@ local function createCreatorTag(player)
         local bg = Instance.new("BillboardGui")
         bg.Name = "CreatorTag"
         bg.Adornee = humanoidRootPart
-        bg.Size = UDim2.fromOffset(240, 60) -- 适度放大，提升辨识度
+        bg.Size = UDim2.fromOffset(280, 60) -- 适度加宽，适配作者名显示
         bg.AlwaysOnTop = true
         bg.Parent = player.Character
         bg.MaxDistance = 600 -- 延长显示距离
@@ -124,11 +124,11 @@ local function createCreatorTag(player)
         corner.Parent = frame
         frame.Parent = bg
 
-        -- 核心文字（突出W元素+像素字体）
+        -- 核心文字（修复：添加作者名wbwhnb，强化标识）
         local textLabel = Instance.new("TextLabel")
         textLabel.Size = UDim2.fromScale(1, 1)
         textLabel.BackgroundTransparency = 1
-        textLabel.Text = "[W] 超级脚本制作者" -- 强化W核心标识
+        textLabel.Text = "[W] 超级脚本制作者 " .. player.Name -- 新增：显示作者名wbwhnb
         textLabel.TextColor3 = Color3.new(1, 0.8, 0) -- 亮黄霓虹色，高对比度
         textLabel.TextSize = 22 -- 放大文字，像素感更明显
         textLabel.Font = Enum.Font.PixelSize -- 像素风格字体（Delta兼容）
