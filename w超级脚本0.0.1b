@@ -1,0 +1,93 @@
+-- Delta 适配：简化全局变量（避免 Delta 注入器限制）
+local Global = {
+    WindUI = nil,
+    MainWindow = nil,
+    noclipConnection = nil,
+    nightVisionEnabled = false,
+    currentWalkSpeed = 16,
+    currentJumpPower = 50,
+    godmodeEnabled = false,
+    autoswingEnabled = false,
+    wallhopConnection = nil,
+    rainbowAnimationConnection = nil,
+    flyEnabled = false, -- 新增：飞行状态存储
+    flyConnection = nil -- 新增：飞行循环连接存储（避免 Delta 内存泄露）
+}
+
+-- （原有代码不变，跳过框架加载、服务预加载等部分）
+
+-- ==================== 通用功能 Tab ====================
+local GeneralTab = MainWindow:Tab({ Title = "通用功能", Icon = "settings" })
+GeneralTab:Section({ Title = "基础属性调整" })
+
+-- （原有速度调节、跳跃高度调节等功能不变）
+
+-- 新增：超人飞行功能（Delta 适配版）
+GeneralTab:Button({
+    Title = "超人飞行",
+    Callback = function()
+        -- 切换飞行状态
+        Global.flyEnabled = not Global.flyEnabled
+        
+        -- 关闭已有飞行连接（避免重复加载）
+        if Global.flyConnection then
+            Global.flyConnection:Disconnect()
+            Global.flyConnection = nil
+        end
+        
+        if Global.flyEnabled then
+            -- Delta 适配：拆分 HttpGet 与 loadstring，双重错误捕获
+            local success, flyScript = pcall(function()
+                -- 优先使用 Delta 兼容的 HttpGet（带 true 参数忽略缓存）
+                return game:HttpGet("https://raw.githubusercontent.com/396abc/Script/refs/heads/main/MobileFly.lua", true)
+            end)
+            
+            if not success then
+                WindUI:Notify({ Title = "加载失败", Content = "飞行脚本链接无法访问", Duration = 3 })
+                Global.flyEnabled = false
+                return
+            end
+            
+            -- 执行飞行脚本并绑定保活连接
+            local execSuccess = pcall(function()
+                local flyFunc = loadstring(flyScript)()
+                
+                -- 若脚本返回循环函数，用 RenderStepped 绑定（Delta 稳定兼容）
+                if type(flyFunc) == "function" then
+                    Global.flyConnection = RunService.RenderStepped:Connect(function()
+                        -- 角色存在时才执行飞行逻辑，避免空引用报错
+                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            flyFunc()
+                        end
+                    end)
+                else
+                    -- 兼容脚本自动运行的情况，用空连接标记状态
+                    Global.flyConnection = Instance.new("BindableEvent").Event:Connect(function() end)
+                end
+            end)
+            
+            if execSuccess then
+                WindUI:Notify({ Title = "飞行激活", Content = "超人飞行已开启，再次点击关闭", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "脚本不兼容 Delta 注入器", Duration = 3 })
+                Global.flyEnabled = false
+            end
+        else
+            -- 关闭飞行：恢复角色碰撞与默认属性
+            local char = waitForCharacter()
+            if char then
+                for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then part.CanCollide = true end
+                end
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = Global.currentWalkSpeed
+                    humanoid.JumpPower = Global.currentJumpPower
+                end
+            end
+            WindUI:Notify({ Title = "飞行关闭", Content = "超人飞行已禁用", Duration = 3 })
+        end
+    end
+})
+
+-- （原有穿墙、无敌、跳墙等功能不变）
