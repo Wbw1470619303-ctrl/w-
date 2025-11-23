@@ -296,7 +296,7 @@ end)
 WindUI:Popup({
     Title = "w 超级脚本",
     IconThemed = true,
-    Content = "欢迎使用 MR 附属脚本 MR pio\n当前用户: " .. LocalPlayer.Name,
+    Content = "欢迎使用w超级脚本\n当前用户: " .. LocalPlayer.Name,
     Buttons = {
         { Title = "取消", Callback = function() end },
         { Title = "加载脚本", Callback = function() Confirmed = true; createMainUI() end }
