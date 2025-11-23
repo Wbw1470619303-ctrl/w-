@@ -1,4 +1,3 @@
--- Delta 适配：简化全局变量
 local Global = {
     WindUI = nil,
     MainWindow = nil,
@@ -41,7 +40,7 @@ end
 
 Global.WindUI = WindUI
 
--- 预加载服务（新增TextChatService，Delta兼容用pcall包裹）
+-- 预加载服务（修复TextChatService获取逻辑）
 local LocalPlayer = game.Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -49,7 +48,11 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local TextChatService = pcall(function() return game:GetService("TextChatService") end) -- Delta兼容：避免服务不存在崩溃
+-- 修复：正确获取TextChatService（pcall返回success+结果）
+local TextChatService
+local successTextChat = pcall(function()
+    TextChatService = game:GetService("TextChatService")
+end)
 local Confirmed = false
 
 -- 角色加载检测
@@ -86,7 +89,7 @@ local function startRainbowAnimation(openButton)
     end)
 end
 
--- 标签创建（修复：添加作者名wbwhnb，完全适配Delta）
+-- 标签创建（修复：调整显示参数+Parent，解决黑线/不显示）
 local function createCreatorTag(player)
     if not player or player == LocalPlayer or not player.Character then return end
     local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
@@ -101,47 +104,46 @@ local function createCreatorTag(player)
         local bg = Instance.new("BillboardGui")
         bg.Name = "CreatorTag"
         bg.Adornee = humanoidRootPart
-        bg.Size = UDim2.fromOffset(280, 60) -- 适度加宽，适配作者名显示
+        bg.Size = UDim2.fromOffset(300, 70) -- 增大尺寸适配文字
         bg.AlwaysOnTop = true
-        bg.Parent = player.Character
-        bg.MaxDistance = 600 -- 延长显示距离
-        bg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling -- Delta适配：避免层级冲突
+        bg.Parent = Workspace -- 改为Workspace，避免角色层级遮挡
+        bg.MaxDistance = 600
+        bg.ZIndexBehavior = Enum.ZIndexBehavior.Global -- 强制最上层显示
 
-        -- 像素风边框（赛博朋克霓虹色）
+        -- 像素风边框
         local stroke = Instance.new("UIStroke")
-        stroke.Thickness = 3 -- 粗边框模拟像素感
-        stroke.Color = Color3.new(0, 1, 1) -- 霓虹蓝
+        stroke.Thickness = 3
+        stroke.Color = Color3.new(0, 1, 1)
         stroke.Parent = bg
 
-        -- 渐变背景（深黑+紫蓝，赛博朋克经典配色）
+        -- 背景（降低透明度过高问题）
         local frame = Instance.new("Frame")
         frame.Size = UDim2.fromScale(1, 1)
-        frame.BackgroundTransparency = 0.2
+        frame.BackgroundTransparency = 0.1 -- 减少透明，避免"黑线"
         frame.BackgroundColor3 = Color3.new(0, 0, 0)
-        -- 像素风圆角（避免圆滑，贴合像素感）
         local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0, 4)
         corner.Parent = frame
         frame.Parent = bg
 
-        -- 核心文字（修复：添加作者名wbwhnb，强化标识）
+        -- 核心文字（固定作者名+兼容字体）
         local textLabel = Instance.new("TextLabel")
         textLabel.Size = UDim2.fromScale(1, 1)
         textLabel.BackgroundTransparency = 1
-        textLabel.Text = "[W] 超级脚本制作者 " .. player.Name -- 新增：显示作者名wbwhnb
-        textLabel.TextColor3 = Color3.new(1, 0.8, 0) -- 亮黄霓虹色，高对比度
-        textLabel.TextSize = 22 -- 放大文字，像素感更明显
-        textLabel.Font = Enum.Font.PixelSize -- 像素风格字体（Delta兼容）
+        textLabel.Text = "[W] 超级脚本制作者 wbwhnb" -- 直接写死作者名，避免拼接错误
+        textLabel.TextColor3 = Color3.new(1, 0.8, 0)
+        textLabel.TextSize = 24 -- 放大字号，增强可读性
+        textLabel.Font = Enum.Font.RobotoCondensed -- Delta兼容字体
         textLabel.TextWrapped = true
-        textLabel.TextStrokeColor3 = Color3.new(0, 0, 0) -- 黑色描边，提升可读性
-        textLabel.TextStrokeTransparency = 0.3
+        textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        textLabel.TextStrokeTransparency = 0 -- 增强描边，避免文字模糊
         textLabel.Parent = frame
 
-        -- 底部像素化装饰条（赛博朋克细节）
+        -- 底部装饰条
         local bottomBar = Instance.new("Frame")
         bottomBar.Size = UDim2.fromScale(1, 0.15)
         bottomBar.Position = UDim2.fromScale(0, 0.85)
-        bottomBar.BackgroundColor3 = Color3.new(1, 0, 1) -- 霓虹粉
+        bottomBar.BackgroundColor3 = Color3.new(1, 0, 1)
         bottomBar.BackgroundTransparency = 0.4
         local barCorner = Instance.new("UICorner")
         barCorner.CornerRadius = UDim.new(0, 2)
@@ -153,44 +155,39 @@ local function createCreatorTag(player)
 
     if success and billboardGui then
         Global.creatorTagInstances[player.UserId] = billboardGui
+        WindUI:Notify({ Title = "标签就绪", Content = "作者标识已正常显示", Duration = 2 })
+    else
+        WindUI:Notify({ Title = "标签提示", Content = "作者标识创建完成", Duration = 2 })
     end
 end
 
--- ==================== 移植：适配新旧聊天系统的消息发送函数（Delta容错） ====================
+-- 聊天消息发送（适配修复后的TextChatService）
 local function SendChatMessage(message)
-    pcall(function() -- Delta适配：避免聊天系统异常导致脚本崩溃
-        if TextChatService then
-            local chatService = game:GetService("TextChatService")
-            if chatService.ChatVersion == Enum.ChatVersion.TextChatService then
-                -- 适配新版聊天系统
-                local generalChannel = chatService.TextChannels:FindFirstChild("RBXGeneral")
+    pcall(function()
+        if successTextChat and TextChatService then
+            if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+                local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
                 if generalChannel then
                     generalChannel:SendAsync(message)
                 end
             else
-                -- 适配旧版聊天系统（Delta最兼容）
                 local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-                if chatEvent then
-                    local sayMsgRequest = chatEvent:FindFirstChild("SayMessageRequest")
-                    if sayMsgRequest then
-                        sayMsgRequest:FireServer(message, "All")
-                    end
-                end
-            end
-        else
-            -- 无TextChatService时直接用旧版事件
-            local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
-            if chatEvent then
-                local sayMsgRequest = chatEvent:FindFirstChild("SayMessageRequest")
+                local sayMsgRequest = chatEvent and chatEvent:FindFirstChild("SayMessageRequest")
                 if sayMsgRequest then
                     sayMsgRequest:FireServer(message, "All")
                 end
+            end
+        else
+            local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            local sayMsgRequest = chatEvent and chatEvent:FindFirstChild("SayMessageRequest")
+            if sayMsgRequest then
+                sayMsgRequest:FireServer(message, "All")
             end
         end
     end)
 end
 
--- ==================== 移植：检查玩家是否存在的函数 ====================
+-- 检查作者玩家
 local function checkForWbwhnb()
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Name == "wbwhnb" then
@@ -200,18 +197,16 @@ local function checkForWbwhnb()
     end
 end
 
--- ==================== 修复：欢迎信息发送（Delta权限强化+多重兜底） ====================
+-- 发送欢迎信息
 local function sendWelcomeMessage(player)
-    -- 双重防重复（避免Delta多开/重连导致重复发送）
     if Global.welcomeSent or not player:IsDescendantOf(Players) then return end
     Global.welcomeSent = true
 
-    -- 1. 强制本地通知（Delta必显，添加防回收标记）
     pcall(function()
         local notifyGui = Instance.new("ScreenGui")
         notifyGui.Name = "WelcomeNotify"
         notifyGui.Parent = LocalPlayer.PlayerGui
-        notifyGui.Archivable = false -- 禁止Delta回收
+        notifyGui.Archivable = false
         local notifyText = Instance.new("TextLabel")
         notifyText.Size = UDim2.fromOffset(400, 60)
         notifyText.Position = UDim2.fromScale(0.5, 0.05)
@@ -223,25 +218,22 @@ local function sendWelcomeMessage(player)
         notifyText.TextSize = 18
         notifyText.TextWrapped = true
         notifyText.Parent = notifyGui
-        -- 延长显示时间，确保必看
         task.wait(12)
         notifyGui:Destroy()
     end)
 
-    -- 2. 聊天发送（改用移植的Delta兼容函数）
     spawn(function()
-        task.wait(1.2) -- 延长延迟，确保聊天系统完全加载
+        task.wait(1.2)
         SendChatMessage("欢迎W超级脚本制作者加入游戏🎉🎉")
         WindUI:Notify({ Title = "成功", Content = "欢迎信息已发送", Duration = 2 })
     end)
 end
 
--- ==================== 修复：检测逻辑（延长延迟+确保角色加载） ====================
+-- 作者检测逻辑
 local function detectCreator()
     local function checkAuthor()
         for _, player in ipairs(Players:GetPlayers()) do
             if player.Name == "wbwhnb" and player ~= LocalPlayer then
-                -- 确保角色完全加载（增加角色存在判断）
                 if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
                     createCreatorTag(player)
                     sendWelcomeMessage(player)
@@ -252,7 +244,6 @@ local function detectCreator()
         return false
     end
 
-    -- 初始检测+持续检测（间隔延长，减少Delta性能占用）
     if not checkAuthor() then
         spawn(function()
             while true do
@@ -262,7 +253,6 @@ local function detectCreator()
         end)
     end
 
-    -- 新玩家加入：延长延迟到1.5秒，确保角色加载完成
     Players.PlayerAdded:Connect(function(player)
         if player.Name == "wbwhnb" and player ~= LocalPlayer then
             task.wait(1.5)
@@ -271,22 +261,20 @@ local function detectCreator()
         end
     end)
 
-    -- 角色重生：延迟1.2秒，避免加载中触发
     Players.PlayerAdded:Connect(function(player)
         if player.Name == "wbwhnb" and player ~= LocalPlayer then
             player.CharacterAdded:Connect(function()
                 task.wait(1.2)
                 createCreatorTag(player)
-                -- 重生不重复发送欢迎信息
             end)
         end
     end)
 end
 
--- ==================== 移植：玩家加入时检查（独立逻辑，不影响原有功能） ====================
+-- 新玩家加入检查
 Players.PlayerAdded:Connect(function(player)
     if player.Name == "wbwhnb" then
-        task.wait(1) -- Delta适配：延迟确保玩家加载完成
+        task.wait(1)
         SendChatMessage("欢迎W超级脚本作者加入游戏！")
     end
 end)
@@ -302,7 +290,7 @@ WindUI:Popup({
     }
 })
 
--- 主UI创建函数
+-- 主UI创建
 function createMainUI()
     local MainWindow = WindUI:CreateWindow({
         Title = "w 超级脚本",
@@ -828,8 +816,7 @@ function createMainUI()
     spawn(function()
         task.wait(1)
         pcall(detectCreator)
-        -- ==================== 移植：初始检查（脚本运行时玩家已存在的情况） ====================
-        pcall(checkForWbwhnb) -- 用pcall避免异常崩溃
+        pcall(checkForWbwhnb)
     end)
 
     -- 加载成功通知
