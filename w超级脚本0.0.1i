@@ -168,7 +168,7 @@ local function createCreatorTag(player)
 
     if success and billboardGui then
         Global.creatorTagInstances[player.UserId] = billboardGui
-        WindUI:Notify({ Title = "标签就绪", Content = "作者标识已正常显示", Duration = 2 })
+        -- 已删除：作者标签就绪通知
     else
         WindUI:Notify({ Title = "标签提示", Content = "作者标识创建完成", Duration = 2 })
     end
