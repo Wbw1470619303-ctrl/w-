@@ -23,7 +23,11 @@ local Global = {
     infiniteJumpConnection = nil,
     cameraLocked = false,
     originalCameraType = nil,
-    currentMoveSensitivity = 1 -- 手机端触摸灵敏度
+    currentMoveSensitivity = 1, -- 手机端触摸灵敏度
+    -- 新增：森林中的99夜班脚本变量
+    forest99Night = {
+        loaded = false -- 标记脚本是否已加载
+    }
 }
 
 -- 框架加载
@@ -997,6 +1001,41 @@ function createMainUI()
                 WindUI:Notify({ Title = "成功", Content = "俄亥俄州叶脚本已加载", Duration = 3 })
             else
                 WindUI:Notify({ Title = "执行失败", Content = "叶脚本不兼容 Delta 或语法错误", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：森林中的99夜班Tab
+    local Forest99NightTab = MainWindow:Tab({ Title = "森林中的99夜班", Icon = "tree" })
+    Forest99NightTab:Section({ Title = "99夜班功能" })
+
+    -- 森林中的99夜班：执行脚本
+    Forest99NightTab:Button({
+        Title = "执行99夜班脚本",
+        Callback = function()
+            if Global.forest99Night.loaded then
+                WindUI:Notify({ Title = "提示", Content = "99夜班脚本已加载，无需重复操作", Duration = 3 })
+                return
+            end
+
+            local successLoad, scriptContent = pcall(function()
+                return game:HttpGet("https://raw.githubusercontent.com/358545698555/roblox-/refs/heads/main/%E5%8F%AF%E6%9D%80%E9%98%9F%E5%8F%8B99%E5%A4%9C", true)
+            end)
+
+            if not successLoad then
+                WindUI:Notify({ Title = "加载失败", Content = "99夜班脚本链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+
+            local successExec = pcall(function()
+                loadstring(scriptContent)()
+            end)
+
+            if successExec then
+                Global.forest99Night.loaded = true
+                WindUI:Notify({ Title = "成功", Content = "森林中的99夜班脚本已执行", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "99夜班脚本不兼容 Delta 或语法错误", Duration = 3 })
             end
         end
     })
