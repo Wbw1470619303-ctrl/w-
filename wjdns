@@ -1,0 +1,1139 @@
+local Global = {
+    WindUI = nil,
+    MainWindow = nil,
+    noclipConnection = nil,
+    nightVisionEnabled = false,
+    currentWalkSpeed = 16,
+    currentJumpPower = 50,
+    godmodeEnabled = false,
+    autoswingEnabled = false,
+    wallhopConnection = nil,
+    rainbowAnimationConnection = nil,
+    flyConnection = nil,
+    creatorTagInstances = {},
+    welcomeSent = false,
+    -- 新增：俄亥俄州脚本变量
+    ohioScript = {
+        loaded = false -- 标记脚本是否已加载
+    },
+    -- 新增：基础功能扩展变量（适配手机端）
+    autoHealEnabled = false,
+    autoHealConnection = nil,
+    infiniteJumpEnabled = false,
+    infiniteJumpConnection = nil,
+    cameraLocked = false,
+    originalCameraType = nil,
+    currentMoveSensitivity = 1 -- 手机端触摸灵敏度
+}
+
+-- 框架加载
+local success, WindUI = pcall(function()
+    local framework = game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua")
+    return loadstring(framework)()
+end)
+
+if not success then
+    local notification = Instance.new("ScreenGui")
+    notification.Name = "LoadFailNotice"
+    notification.Parent = game.Players.LocalPlayer.PlayerGui
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.fromOffset(300, 80)
+    textLabel.Position = UDim2.fromScale(0.5, 0.1)
+    textLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+    textLabel.BackgroundColor3 = Color3.new(0, 0, 0)
+    textLabel.TextColor3 = Color3.new(1, 0, 0)
+    textLabel.Text = "WindUI 框架加载失败\n请检查网络或更新 Delta 注入器"
+    textLabel.TextWrapped = true
+    textLabel.Parent = notification
+    task.wait(5)
+    notification:Destroy()
+    return
+end
+
+Global.WindUI = WindUI
+
+-- 预加载服务（修复TextChatService获取逻辑）
+local LocalPlayer = game.Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService") -- 新增：适配手机端输入
+-- 修复：正确获取TextChatService（pcall返回success+结果）
+local TextChatService
+local successTextChat = pcall(function()
+    TextChatService = game:GetService("TextChatService")
+end)
+local Confirmed = false
+
+-- 角色加载检测
+local function waitForCharacter()
+    local timeout = 0
+    while not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") do
+        task.wait(0.1)
+        timeout += 0.1
+        if timeout >= 10 then return nil end
+    end
+    return LocalPlayer.Character
+end
+
+-- 彩虹色生成
+local function getRainbowColor(hueOffset)
+    local hue = (tick() * 0.2 + hueOffset) % 1
+    return Color3.fromHSV(hue, 0.8, 0.9)
+end
+
+-- 小窗彩虹动画
+local function startRainbowAnimation(openButton)
+    if Global.rainbowAnimationConnection then
+        Global.rainbowAnimationConnection:Disconnect()
+    end
+    Global.rainbowAnimationConnection = RunService.RenderStepped:Connect(function()
+        if openButton and openButton.Parent then
+            local color1 = getRainbowColor(0)
+            local color2 = getRainbowColor(0.1)
+            openButton.Color = ColorSequence.new(color1, color2)
+        else
+            Global.rainbowAnimationConnection:Disconnect()
+            Global.rainbowAnimationConnection = nil
+        end
+    end)
+end
+
+-- 标签创建（修复：调整显示参数+Parent，解决黑线/不显示）
+local function createCreatorTag(player)
+    if not player or player == LocalPlayer or not player.Character then return end
+    local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+
+    if Global.creatorTagInstances[player.UserId] then
+        pcall(function() Global.creatorTagInstances[player.UserId]:Destroy() end)
+        Global.creatorTagInstances[player.UserId] = nil
+    end
+
+    local success, billboardGui = pcall(function()
+        local bg = Instance.new("BillboardGui")
+        bg.Name = "CreatorTag"
+        bg.Adornee = humanoidRootPart
+        bg.Size = UDim2.fromOffset(300, 70) -- 增大尺寸适配文字
+        bg.AlwaysOnTop = true
+        bg.Parent = Workspace -- 改为Workspace，避免角色层级遮挡
+        bg.MaxDistance = 600
+        bg.ZIndexBehavior = Enum.ZIndexBehavior.Global -- 强制最上层显示
+
+        -- 像素风边框
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 3
+        stroke.Color = Color3.new(0, 1, 1)
+        stroke.Parent = bg
+
+        -- 背景（降低透明度过高问题）
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.fromScale(1, 1)
+        frame.BackgroundTransparency = 0.1 -- 减少透明，避免"黑线"
+        frame.BackgroundColor3 = Color3.new(0, 0, 0)
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 4)
+        corner.Parent = frame
+        frame.Parent = bg
+
+        -- 核心文字（固定作者名+兼容字体）
+        local textLabel = Instance.new("TextLabel")
+        textLabel.Size = UDim2.fromScale(1, 1)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = "[W] 超级脚本制作者 wbwhnb" -- 直接写死作者名，避免拼接错误
+        textLabel.TextColor3 = Color3.new(1, 0.8, 0)
+        textLabel.TextSize = 24 -- 放大字号，增强可读性
+        textLabel.Font = Enum.Font.RobotoCondensed -- Delta兼容字体
+        textLabel.TextWrapped = true
+        textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+        textLabel.TextStrokeTransparency = 0 -- 增强描边，避免文字模糊
+        textLabel.Parent = frame
+
+        -- 底部装饰条
+        local bottomBar = Instance.new("Frame")
+        bottomBar.Size = UDim2.fromScale(1, 0.15)
+        bottomBar.Position = UDim2.fromScale(0, 0.85)
+        bottomBar.BackgroundColor3 = Color3.new(1, 0, 1)
+        bottomBar.BackgroundTransparency = 0.4
+        local barCorner = Instance.new("UICorner")
+        barCorner.CornerRadius = UDim.new(0, 2)
+        barCorner.Parent = bottomBar
+        bottomBar.Parent = frame
+
+        return bg
+    end)
+
+    if success and billboardGui then
+        Global.creatorTagInstances[player.UserId] = billboardGui
+        -- 已删除：作者标签就绪通知
+    else
+        WindUI:Notify({ Title = "标签提示", Content = "作者标识创建完成", Duration = 2 })
+    end
+end
+
+-- 聊天消息发送（适配修复后的TextChatService）
+local function SendChatMessage(message)
+    pcall(function()
+        if successTextChat and TextChatService then
+            if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+                local generalChannel = TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+                if generalChannel then
+                    generalChannel:SendAsync(message)
+                end
+            else
+                local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+                local sayMsgRequest = chatEvent and chatEvent:FindFirstChild("SayMessageRequest")
+                if sayMsgRequest then
+                    sayMsgRequest:FireServer(message, "All")
+                end
+            end
+        else
+            local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            local sayMsgRequest = chatEvent and chatEvent:FindFirstChild("SayMessageRequest")
+            if sayMsgRequest then
+                sayMsgRequest:FireServer(message, "All")
+            end
+        end
+    end)
+end
+
+-- 检查作者玩家
+local function checkForWbwhnb()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Name == "wbwhnb" then
+            SendChatMessage("检测到超级脚本制作者正在此游戏中！🎉🎉欢迎W超级脚本作者wbwhnb加入游戏！🎉🎉")
+            break
+        end
+    end
+end
+
+-- 发送欢迎信息
+local function sendWelcomeMessage(player)
+    if Global.welcomeSent or not player:IsDescendantOf(Players) then return end
+    Global.welcomeSent = true
+
+    pcall(function()
+        local notifyGui = Instance.new("ScreenGui")
+        notifyGui.Name = "WelcomeNotify"
+        notifyGui.Parent = LocalPlayer.PlayerGui
+        notifyGui.Archivable = false
+        local notifyText = Instance.new("TextLabel")
+        notifyText.Size = UDim2.fromOffset(400, 60)
+        notifyText.Position = UDim2.fromScale(0.5, 0.05)
+        notifyText.AnchorPoint = Vector2.new(0.5, 0)
+        notifyText.BackgroundColor3 = Color3.new(0, 0, 0)
+        notifyText.BackgroundTransparency = 0.3
+        notifyText.TextColor3 = Color3.new(1, 1, 0)
+        notifyText.Text = "欢迎w超级脚本制作者 @" .. player.Name .. " 加入游戏！🎉🎉"
+        notifyText.TextSize = 18
+        notifyText.TextWrapped = true
+        notifyText.Parent = notifyGui
+        task.wait(12)
+        notifyGui:Destroy()
+    end)
+
+    spawn(function()
+        task.wait(1.2)
+        SendChatMessage("欢迎W超级脚本制作者wbwhnb加入游戏🎉🎉")
+        WindUI:Notify({ Title = "成功", Content = "欢迎信息已发送", Duration = 2 })
+    end)
+end
+
+-- 作者检测逻辑
+local function detectCreator()
+    local function checkAuthor()
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Name == "wbwhnb" and player ~= LocalPlayer then
+                if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                    createCreatorTag(player)
+                    sendWelcomeMessage(player)
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    if not checkAuthor() then
+        spawn(function()
+            while true do
+                task.wait(3)
+                if checkAuthor() then break end
+            end
+        end)
+    end
+
+    Players.PlayerAdded:Connect(function(player)
+        if player.Name == "wbwhnb" and player ~= LocalPlayer then
+            task.wait(1.5)
+            createCreatorTag(player)
+            sendWelcomeMessage(player)
+        end
+    end)
+
+    Players.PlayerAdded:Connect(function(player)
+        if player.Name == "wbwhnb" and player ~= LocalPlayer then
+            player.CharacterAdded:Connect(function()
+                task.wait(1.2)
+                createCreatorTag(player)
+            end)
+        end
+    end)
+end
+
+-- 新玩家加入检查
+Players.PlayerAdded:Connect(function(player)
+    if player.Name == "wbwhnb" then
+        task.wait(1)
+        SendChatMessage("🎉欢迎W超级脚本作者wbwhnb加入游戏！🎉")
+    end
+end)
+
+-- 初始弹窗
+WindUI:Popup({
+    Title = "w 超级脚本",
+    IconThemed = true,
+    Content = "欢迎使用w超级脚本\n当前用户: " .. LocalPlayer.Name,
+    Buttons = {
+        { Title = "取消", Callback = function() end },
+        { Title = "加载脚本", Callback = function() Confirmed = true; createMainUI() end }
+    }
+})
+
+-- 数值验证工具函数（适配手动输入）
+local function validateNumber(input, min, max, default)
+    local num = tonumber(input)
+    if not num then return default end
+    return math.clamp(num, min, max)
+end
+
+-- 主UI创建
+function createMainUI()
+    local MainWindow = WindUI:CreateWindow({
+        Title = "w 超级脚本",
+        Icon = "crown",
+        Author = "wbwhnb (QQ: 2318995920)",
+        Folder = "wSuperScript",
+        Size = UDim2.fromOffset(600, 400),
+        Theme = "Dark",
+        SideBarWidth = 220,
+        OnClose = function() MainWindow:Hide() end,
+        OnMinimize = function()
+            MainWindow:Hide()
+            local openButton = CoreGui:FindFirstChild("WindUI_OpenButton")
+            if openButton then openButton.Visible = true end
+        end,
+    })
+    Global.MainWindow = MainWindow
+
+    local function createOpenButton()
+        local openButton = MainWindow:EditOpenButton({
+            Title = "w 超级脚本",
+            Icon = "crown",
+            CornerRadius = UDim.new(0, 10),
+            StrokeThickness = 2,
+            Color = ColorSequence.new(getRainbowColor(0), getRainbowColor(0.1)),
+            Draggable = true,
+            Parent = CoreGui,
+            ZIndex = 9999,
+            Size = UDim2.fromOffset(120, 40),
+        })
+        startRainbowAnimation(openButton)
+        return openButton
+    end
+
+    local openButton = createOpenButton()
+
+    -- 作者信息Tab
+    local AuthorTab = MainWindow:Tab({ Title = "作者信息", Icon = "user" })
+    AuthorTab:Section({ Title = "脚本作者详情" })
+    AuthorTab:Paragraph({ Text = "作者: wbwhnb" })
+    AuthorTab:Paragraph({ Text = "作者 QQ: 2318995920" })
+    AuthorTab:Paragraph({ Text = "脚本性质: 免费开源" })
+    AuthorTab:Button({
+        Title = "复制作者 QQ",
+        Callback = function()
+            setclipboard("2318995920")
+            WindUI:Notify({ Title = "提示", Content = "QQ 已复制到剪贴板", Duration = 3 })
+        end
+    })
+
+    -- 通用功能Tab
+    local GeneralTab = MainWindow:Tab({ Title = "通用功能", Icon = "settings" })
+    GeneralTab:Section({ Title = "基础属性调整（上限999）" })
+
+    -- 1. 移动速度（手动输入，范围16-999）
+    local speedFrame = Instance.new("Frame")
+    speedFrame.Size = UDim2.fromScale(1, 0.12)
+    speedFrame.BackgroundTransparency = 1
+    speedFrame.Parent = GeneralTab.Content
+
+    local speedLabel = Instance.new("TextLabel")
+    speedLabel.Text = "移动速度（16-999）"
+    speedLabel.TextColor3 = Color3.new(1, 1, 1)
+    speedLabel.TextSize = 14
+    speedLabel.Size = UDim2.fromScale(0.3, 1)
+    speedLabel.Position = UDim2.fromScale(0, 0)
+    speedLabel.BackgroundTransparency = 1
+    speedLabel.Parent = speedFrame
+
+    local speedInput = Instance.new("TextBox")
+    speedInput.Size = UDim2.fromScale(0.2, 0.7)
+    speedInput.Position = UDim2.fromScale(0.35, 0.15)
+    speedInput.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    speedInput.TextColor3 = Color3.new(1, 1, 1)
+    speedInput.PlaceholderText = tostring(Global.currentWalkSpeed)
+    speedInput.Text = tostring(Global.currentWalkSpeed)
+    speedInput.Font = Enum.Font.RobotoCondensed
+    speedInput.TextSize = 14
+    speedInput.ClearTextOnFocus = false
+    speedInput.Parent = speedFrame
+
+    local speedButton = Instance.new("TextButton")
+    speedButton.Size = UDim2.fromScale(0.15, 0.7)
+    speedButton.Position = UDim2.fromScale(0.6, 0.15)
+    speedButton.BackgroundColor3 = Color3.new(0, 1, 1)
+    speedButton.TextColor3 = Color3.new(0, 0, 0)
+    speedButton.Text = "应用"
+    speedButton.Font = Enum.Font.RobotoBold
+    speedButton.TextSize = 14
+    speedButton.Parent = speedFrame
+    speedButton.MouseButton1Click:Connect(function()
+        pcall(function()
+            local newValue = validateNumber(speedInput.Text, 16, 999, Global.currentWalkSpeed)
+            Global.currentWalkSpeed = newValue
+            speedInput.Text = tostring(newValue)
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.WalkSpeed = newValue end
+            end
+            WindUI:Notify({ Title = "成功", Content = "移动速度已设置为 " .. newValue, Duration = 2 })
+        end)
+    end)
+
+    -- 2. 跳跃高度（手动输入，范围50-999）
+    local jumpFrame = Instance.new("Frame")
+    jumpFrame.Size = UDim2.fromScale(1, 0.12)
+    jumpFrame.Position = UDim2.fromScale(0, 0.15)
+    jumpFrame.BackgroundTransparency = 1
+    jumpFrame.Parent = GeneralTab.Content
+
+    local jumpLabel = Instance.new("TextLabel")
+    jumpLabel.Text = "跳跃高度（50-999）"
+    jumpLabel.TextColor3 = Color3.new(1, 1, 1)
+    jumpLabel.TextSize = 14
+    jumpLabel.Size = UDim2.fromScale(0.3, 1)
+    jumpLabel.Position = UDim2.fromScale(0, 0)
+    jumpLabel.BackgroundTransparency = 1
+    jumpLabel.Parent = jumpFrame
+
+    local jumpInput = Instance.new("TextBox")
+    jumpInput.Size = UDim2.fromScale(0.2, 0.7)
+    jumpInput.Position = UDim2.fromScale(0.35, 0.15)
+    jumpInput.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    jumpInput.TextColor3 = Color3.new(1, 1, 1)
+    jumpInput.PlaceholderText = tostring(Global.currentJumpPower)
+    jumpInput.Text = tostring(Global.currentJumpPower)
+    jumpInput.Font = Enum.Font.RobotoCondensed
+    jumpInput.TextSize = 14
+    jumpInput.ClearTextOnFocus = false
+    jumpInput.Parent = jumpFrame
+
+    local jumpButton = Instance.new("TextButton")
+    jumpButton.Size = UDim2.fromScale(0.15, 0.7)
+    jumpButton.Position = UDim2.fromScale(0.6, 0.15)
+    jumpButton.BackgroundColor3 = Color3.new(1, 0, 1)
+    jumpButton.TextColor3 = Color3.new(0, 0, 0)
+    jumpButton.Text = "应用"
+    jumpButton.Font = Enum.Font.RobotoBold
+    jumpButton.TextSize = 14
+    jumpButton.Parent = jumpFrame
+    jumpButton.MouseButton1Click:Connect(function()
+        pcall(function()
+            local newValue = validateNumber(jumpInput.Text, 50, 999, Global.currentJumpPower)
+            Global.currentJumpPower = newValue
+            jumpInput.Text = tostring(newValue)
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.JumpPower = newValue end
+            end
+            WindUI:Notify({ Title = "成功", Content = "跳跃高度已设置为 " .. newValue, Duration = 2 })
+        end)
+    end)
+
+    -- 3. 移动灵敏度（手动输入，范围0.5-999）
+    local sensFrame = Instance.new("Frame")
+    sensFrame.Size = UDim2.fromScale(1, 0.12)
+    sensFrame.Position = UDim2.fromScale(0, 0.3)
+    sensFrame.BackgroundTransparency = 1
+    sensFrame.Parent = GeneralTab.Content
+
+    local sensLabel = Instance.new("TextLabel")
+    sensLabel.Text = "移动灵敏度（0.5-999）"
+    sensLabel.TextColor3 = Color3.new(1, 1, 1)
+    sensLabel.TextSize = 14
+    sensLabel.Size = UDim2.fromScale(0.3, 1)
+    sensLabel.Position = UDim2.fromScale(0, 0)
+    sensLabel.BackgroundTransparency = 1
+    sensLabel.Parent = sensFrame
+
+    local sensInput = Instance.new("TextBox")
+    sensInput.Size = UDim2.fromScale(0.2, 0.7)
+    sensInput.Position = UDim2.fromScale(0.35, 0.15)
+    sensInput.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    sensInput.TextColor3 = Color3.new(1, 1, 1)
+    sensInput.PlaceholderText = tostring(Global.currentMoveSensitivity)
+    sensInput.Text = tostring(Global.currentMoveSensitivity)
+    sensInput.Font = Enum.Font.RobotoCondensed
+    sensInput.TextSize = 14
+    sensInput.ClearTextOnFocus = false
+    sensInput.Parent = sensFrame
+
+    local sensButton = Instance.new("TextButton")
+    sensButton.Size = UDim2.fromScale(0.15, 0.7)
+    sensButton.Position = UDim2.fromScale(0.6, 0.15)
+    sensButton.BackgroundColor3 = Color3.new(0.2, 0.8, 0.5)
+    sensButton.TextColor3 = Color3.new(0, 0, 0)
+    sensButton.Text = "应用"
+    sensButton.Font = Enum.Font.RobotoBold
+    sensButton.TextSize = 14
+    sensButton.Parent = sensFrame
+    sensButton.MouseButton1Click:Connect(function()
+        pcall(function()
+            local newValue = validateNumber(sensInput.Text, 0.5, 999, Global.currentMoveSensitivity)
+            Global.currentMoveSensitivity = newValue
+            sensInput.Text = tostring(newValue)
+            local mouse = LocalPlayer:GetMouse()
+            mouse.Sensitivity = newValue
+            WindUI:Notify({ Title = "成功", Content = "移动灵敏度已设置为 " .. newValue, Duration = 2 })
+        end)
+    end)
+
+    -- 夜视模式
+    GeneralTab:Toggle({
+        Title = "夜视模式",
+        Default = Global.nightVisionEnabled,
+        Callback = function(state)
+            Global.nightVisionEnabled = state
+            if state then
+                Lighting.Ambient = Color3.new(0.8, 0.8, 0.8)
+                Lighting.OutdoorAmbient = Color3.new(0.6, 0.6, 0.6)
+            else
+                Lighting.Ambient = Color3.new(0.1, 0.1, 0.1)
+                Lighting.OutdoorAmbient = Color3.new(0.2, 0.2, 0.2)
+            end
+        end
+    })
+
+    -- 穿墙模式
+    GeneralTab:Toggle({
+        Title = "穿墙模式",
+        Default = false,
+        Callback = function(state)
+            if state then
+                if not Global.noclipConnection then
+                    Global.noclipConnection = RunService.Stepped:Connect(function()
+                        local char = LocalPlayer.Character
+                        if char then
+                            for _, part in pairs(char:GetChildren()) do
+                                if part:IsA("BasePart") then part.CanCollide = false end
+                            end
+                        end
+                    end)
+                end
+            else
+                if Global.noclipConnection then
+                    Global.noclipConnection:Disconnect()
+                    Global.noclipConnection = nil
+                end
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetChildren()) do
+                        if part:IsA("BasePart") then part.CanCollide = true end
+                    end
+                end
+            end
+        end
+    })
+
+    -- 无敌模式
+    GeneralTab:Button({
+        Title = "无敌模式",
+        Callback = function()
+            Global.godmodeEnabled = not Global.godmodeEnabled
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if Global.godmodeEnabled then
+                        humanoid.MaxHealth = math.huge
+                        humanoid.Health = math.huge
+                        humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                            if humanoid.Health < math.huge then humanoid.Health = math.huge end
+                        end)
+                        WindUI:Notify({ Title = "成功", Content = "无敌模式已激活", Duration = 3 })
+                    else
+                        humanoid.MaxHealth = 100
+                        humanoid.Health = 100
+                        WindUI:Notify({ Title = "关闭", Content = "无敌模式已关闭", Duration = 3 })
+                    end
+                end
+            else
+                WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+            end
+        end
+    })
+
+    -- 新增：自动回血（适配手机端，无需手动操作）
+    GeneralTab:Toggle({
+        Title = "自动回血",
+        Default = Global.autoHealEnabled,
+        Callback = function(state)
+            Global.autoHealEnabled = state
+
+            -- 断开原有连接
+            if Global.autoHealConnection then
+                Global.autoHealConnection:Disconnect()
+                Global.autoHealConnection = nil
+            end
+
+            if state then
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        -- 保持血量满
+                        Global.autoHealConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                            pcall(function()
+                                if humanoid.Health < humanoid.MaxHealth then
+                                    humanoid.Health = humanoid.MaxHealth
+                                end
+                            end)
+                        end)
+                        WindUI:Notify({ Title = "成功", Content = "自动回血已激活", Duration = 3 })
+                    else
+                        WindUI:Notify({ Title = "错误", Content = "未找到角色生命组件", Duration = 2 })
+                    end
+                else
+                    WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+                end
+            else
+                WindUI:Notify({ Title = "关闭", Content = "自动回血已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：无限跳跃（适配手机端触摸跳跃）
+    GeneralTab:Toggle({
+        Title = "无限跳跃",
+        Default = Global.infiniteJumpEnabled,
+        Callback = function(state)
+            Global.infiniteJumpEnabled = state
+
+            -- 断开原有连接
+            if Global.infiniteJumpConnection then
+                Global.infiniteJumpConnection:Disconnect()
+                Global.infiniteJumpConnection = nil
+            end
+
+            if state then
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        -- 监听手机端跳跃请求
+                        Global.infiniteJumpConnection = humanoid.JumpRequest:Connect(function()
+                            pcall(function()
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                                humanoid.CanJump = true -- 强制允许跳跃
+                            end)
+                        end)
+                        WindUI:Notify({ Title = "成功", Content = "无限跳跃已激活（点击跳跃键即可）", Duration = 3 })
+                    else
+                        WindUI:Notify({ Title = "错误", Content = "未找到角色跳跃组件", Duration = 2 })
+                    end
+                else
+                    WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+                end
+            else
+                WindUI:Notify({ Title = "关闭", Content = "无限跳跃已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：视角锁定（适配手机端防视角漂移）
+    GeneralTab:Toggle({
+        Title = "视角锁定",
+        Default = Global.cameraLocked,
+        Callback = function(state)
+            Global.cameraLocked = state
+            local camera = Workspace.CurrentCamera
+            if not camera then return end
+
+            if state then
+                -- 保存原视角模式
+                Global.originalCameraType = camera.CameraType
+                pcall(function()
+                    camera.CameraType = Enum.CameraType.Fixed -- 锁定视角
+                end)
+                WindUI:Notify({ Title = "成功", Content = "视角已锁定（防漂移）", Duration = 3 })
+            else
+                -- 恢复原视角模式
+                if Global.originalCameraType then
+                    pcall(function()
+                        camera.CameraType = Global.originalCameraType
+                    end)
+                end
+                WindUI:Notify({ Title = "关闭", Content = "视角锁定已解除", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：快速回血（手机端紧急一键回满）
+    GeneralTab:Button({
+        Title = "快速回血",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    pcall(function()
+                        humanoid.Health = humanoid.MaxHealth
+                    end)
+                    WindUI:Notify({ Title = "成功", Content = "血量已回满", Duration = 2 })
+                else
+                    WindUI:Notify({ Title = "错误", Content = "未找到角色生命组件", Duration = 2 })
+                end
+            else
+                WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+            end
+        end
+    })
+
+    -- 点击传送
+    GeneralTab:Button({
+        Title = "点击传送",
+        Callback = function()
+            local tool = Instance.new("Tool")
+            tool.RequiresHandle = false
+            tool.Name = "[FE] 点击传送工具"
+            tool.Activated:Connect(function()
+                local mouse = LocalPlayer:GetMouse()
+                local char = waitForCharacter()
+                if mouse.Hit and char and char:FindFirstChild("HumanoidRootPart") then
+                    local pos = mouse.Hit.Position + Vector3.new(0, 2.5, 0)
+                    char.HumanoidRootPart.CFrame = CFrame.new(pos)
+                end
+            end)
+            tool.Parent = LocalPlayer.Backpack
+            WindUI:Notify({ Title = "获取", Content = "传送工具已放入背包", Duration = 2 })
+        end
+    })
+
+    -- 跳墙模式
+    GeneralTab:Button({
+        Title = "跳墙模式",
+        Callback = function()
+            if Global.wallhopConnection then
+                Global.wallhopConnection:Disconnect()
+                Global.wallhopConnection = nil
+                WindUI:Notify({ Title = "关闭", Content = "跳墙模式已关闭", Duration = 3 })
+                return
+            end
+
+            local success, wallhopScript = pcall(function()
+                return game:HttpGet("https://raw.githubusercontent.com/ScpGuest666/Random-Roblox-script/refs/heads/main/Roblox%20WallHop%20V4%20script", true)
+            end)
+
+            if not success then
+                WindUI:Notify({ Title = "加载失败", Content = "跳墙脚本链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+
+            local execSuccess, wallhopFunc = pcall(function()
+                local func = loadstring(wallhopScript)
+                return func()
+            end)
+
+            if execSuccess then
+                if typeof(wallhopFunc) == "RBXScriptConnection" then
+                    Global.wallhopConnection = wallhopFunc
+                else
+                    Global.wallhopConnection = Instance.new("BindableEvent").Event:Connect(function() end)
+                end
+                WindUI:Notify({ Title = "成功", Content = "跳墙模式已激活，再次点击关闭", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "跳墙脚本不兼容 Delta 或语法错误", Duration = 3 })
+            end
+        end
+    })
+
+    -- 加载 xahub
+    GeneralTab:Section({ Title = "第三方脚本" })
+    GeneralTab:Button({
+        Title = "加载 xahub",
+        Callback = function()
+            local success, xahubScript = pcall(function()
+                return game:HttpGet("https://pastebin.com/raw/h8nC0fLb", true)
+            end)
+            if not success then
+                WindUI:Notify({ Title = "加载失败", Content = "xahub 链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+            local execSuccess = pcall(function() loadstring(xahubScript)() end)
+            if execSuccess then
+                WindUI:Notify({ Title = "加载成功", Content = "xahub 脚本已执行", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "xahub 脚本语法错误或不兼容 Delta", Duration = 3 })
+            end
+        end
+    })
+
+    -- 超人飞行
+    GeneralTab:Button({
+        Title = "超人飞行",
+        Callback = function()
+            if Global.flyConnection then
+                Global.flyConnection:Disconnect()
+                Global.flyConnection = nil
+                WindUI:Notify({ Title = "关闭", Content = "超人飞行已关闭", Duration = 3 })
+                return
+            end
+
+            local success, flyScript = pcall(function()
+                return game:HttpGet("https://raw.githubusercontent.com/396abc/Script/refs/heads/main/MobileFly.lua", true)
+            end)
+
+            if not success then
+                WindUI:Notify({ Title = "加载失败", Content = "飞行脚本链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+
+            local execSuccess, flyFunc = pcall(function()
+                local func = loadstring(flyScript)
+                return func()
+            end)
+
+            if execSuccess then
+                if typeof(flyFunc) == "RBXScriptConnection" then
+                    Global.flyConnection = flyFunc
+                else
+                    Global.flyConnection = Instance.new("BindableEvent").Event:Connect(function() end)
+                end
+                WindUI:Notify({ Title = "成功", Content = "超人飞行已激活，再次点击关闭", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "飞行脚本不兼容 Delta 或语法错误", Duration = 3 })
+            end
+        end
+    })
+
+    -- 娱乐功能Tab
+    local FunTab = MainWindow:Tab({ Title = "娱乐功能", Icon = "emoji" })
+    FunTab:Button({
+        Title = "蓝屏特效",
+        Callback = function()
+            local success = pcall(function()
+                loadstring(game:HttpGet("https://github.com/RunDTM/roblox-bluescreen/raw/main/bsod.lua"))()
+            end)
+            if success then
+                WindUI:Notify({ Title = "开启", Content = "蓝屏特效已激活（大退关闭）", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "失败", Content = "蓝屏脚本链接失效", Duration = 3 })
+            end
+        end
+    })
+    FunTab:Button({
+        Title = "自杀",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then humanoid.Health = 0 end
+            end
+        end
+    })
+
+    -- DOORS Tab
+    local DoorsTab = MainWindow:Tab({ Title = "DOORS", Icon = "door-open" })
+    DoorsTab:Section({ Title = "核心功能" })
+    DoorsTab:Button({
+        Title = "最强汉化脚本",
+        Callback = function()
+            local success = pcall(function() loadstring(game:HttpGet("https://pastebin.com/raw/65TwT8ja"))() end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "DOORS 汉化脚本已执行" or "脚本链接失效，请更换",
+                Duration = 3
+            })
+        end
+    })
+    DoorsTab:Button({
+        Title = "门绘图显示",
+        Callback = function()
+            local success = pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/cbhlyy/lyycbh/main/doors1"))() end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "门绘图显示已开启" or "脚本链接失效，请更换",
+                Duration = 3
+            })
+        end
+    })
+    DoorsTab:Button({
+        Title = "道具吸铁石",
+        Callback = function()
+            local success = pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/MrNeRD0/Doors-Hack/main/MagnetByNerd.lua"))() end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "吸铁石功能已激活" or "脚本链接失效，请更换",
+                Duration = 3
+            })
+        end
+    })
+    DoorsTab:Button({
+        Title = "获取骷髅钥匙",
+        Callback = function()
+            local success = pcall(function()
+                local item = game:GetObjects("rbxassetid://11697889137")[1]
+                item.Parent = LocalPlayer.Backpack
+            end)
+            WindUI:Notify({
+                Title = success and "成功" or "失败",
+                Content = success and "骷髅钥匙已放入背包" or "钥匙ID失效",
+                Duration = 3
+            })
+        end
+    })
+
+    -- 力量传奇Tab
+    local MuscleLegendsTab = MainWindow:Tab({ Title = "力量传奇", Icon = "dumbbell" })
+    MuscleLegendsTab:Section({ Title = "脚本功能" })
+    MuscleLegendsTab:Button({
+        Title = "杯脚本",
+        Callback = function()
+            local success = pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/zuohongjian/bjb/main/llcq"))() end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "杯脚本已执行" or "脚本链接失效",
+                Duration = 3
+            })
+        end
+    })
+    MuscleLegendsTab:Button({
+        Title = "Speed Hub X",
+        Callback = function()
+            local success = pcall(function() loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ahmadsgamer2/Script--Game/main/Muscle-Legends"))() end)
+            WindUI:Notify({
+                Title = success and "加载成功" or "加载失败",
+                Content = success and "Speed Hub X 已执行" or "脚本链接失效",
+                Duration = 3
+            })
+        end
+    })
+    MuscleLegendsTab:Section({ Title = "快速传送" })
+    MuscleLegendsTab:Button({
+        Title = "出生点",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then char.HumanoidRootPart.CFrame = CFrame.new(7, 3, 108) end
+        end
+    })
+    MuscleLegendsTab:Button({
+        Title = "冰霜健身房",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then char.HumanoidRootPart.CFrame = CFrame.new(-2543, 13, -410) end
+        end
+    })
+    MuscleLegendsTab:Button({
+        Title = "神话健身房",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then char.HumanoidRootPart.CFrame = CFrame.new(2177, 13, 1070) end
+        end
+    })
+
+    -- 忍者传奇Tab
+    local NinjaLegendsTab = MainWindow:Tab({ Title = "忍者传奇", Icon = "shuriken" })
+    NinjaLegendsTab:Section({ Title = "自动功能" })
+    NinjaLegendsTab:Toggle({
+        Title = "自动挥舞",
+        Default = false,
+        Callback = function(state)
+            Global.autoswingEnabled = state
+            if state then
+                spawn(function()
+                    while Global.autoswingEnabled do
+                        task.wait()
+                        if LocalPlayer:FindFirstChild("ninjaEvent") then
+                            LocalPlayer.ninjaEvent:FireServer("swingKatana")
+                        else
+                            Global.autoswingEnabled = false
+                            WindUI:Notify({ Title = "错误", Content = "未找到忍者传奇事件", Duration = 3 })
+                            break
+                        end
+                    end
+                end)
+                WindUI:Notify({ Title = "成功", Content = "自动挥舞已激活", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "关闭", Content = "自动挥舞已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    local autosellEnabled = false
+    NinjaLegendsTab:Toggle({
+        Title = "自动售卖",
+        Default = false,
+        Callback = function(state)
+            autosellEnabled = state
+            if state then
+                spawn(function()
+                    while autosellEnabled do
+                        task.wait(0.1)
+                        local char = waitForCharacter()
+                        if char then
+                            local sellArea = Workspace:FindFirstChild("sellAreaCircles")
+                            if sellArea and sellArea:FindFirstChild("sellAreaCircle7") then
+                                local circleInner = sellArea.sellAreaCircle7:FindFirstChild("circleInner")
+                                if circleInner then
+                                    circleInner.CFrame = char.HumanoidRootPart.CFrame
+                                    task.wait(0.1)
+                                    circleInner.CFrame = Workspace:FindFirstChild("Part") and Workspace.Part.CFrame or char.HumanoidRootPart.CFrame
+                                end
+                            end
+                        end
+                    end
+                end)
+                WindUI:Notify({ Title = "成功", Content = "自动售卖已激活", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "关闭", Content = "自动售卖已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：俄亥俄州Tab（叶脚本功能）
+    local OhioTab = MainWindow:Tab({ Title = "俄亥俄州", Icon = "map" })
+    OhioTab:Section({ Title = "叶脚本功能" })
+
+    -- 俄亥俄州：加载叶脚本
+    OhioTab:Button({
+        Title = "加载叶脚本",
+        Callback = function()
+            if Global.ohioScript.loaded then
+                WindUI:Notify({ Title = "提示", Content = "叶脚本已加载，无需重复操作", Duration = 3 })
+                return
+            end
+
+            -- 全程pcall包裹，适配Delta避免崩溃
+            local successLoad, scriptContent = pcall(function()
+                return game:HttpGet("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/YE-%20Scripts-OHIO.lua", true)
+            end)
+
+            if not successLoad then
+                WindUI:Notify({ Title = "加载失败", Content = "叶脚本链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+
+            local successExec = pcall(function()
+                loadstring(scriptContent)()
+            end)
+
+            if successExec then
+                Global.ohioScript.loaded = true
+                WindUI:Notify({ Title = "成功", Content = "俄亥俄州叶脚本已加载", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "叶脚本不兼容 Delta 或语法错误", Duration = 3 })
+            end
+        end
+    })
+
+    -- 保活逻辑
+    spawn(function()
+        while true do
+            task.wait(3)
+            if Global.MainWindow then
+                local openButton = CoreGui:FindFirstChild("WindUI_OpenButton")
+                if not openButton then
+                    openButton = createOpenButton()
+                else
+                    openButton.Visible = true
+                    if not Global.rainbowAnimationConnection or not Global.rainbowAnimationConnection.Connected then
+                        startRainbowAnimation(openButton)
+                    end
+                end
+            end
+
+            LocalPlayer.CharacterAdded:Connect(function(newChar)
+                task.wait(1)
+                local humanoid = newChar:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.WalkSpeed = Global.currentWalkSpeed
+                    humanoid.JumpPower = Global.currentJumpPower
+                    if Global.godmodeEnabled then
+                        humanoid.MaxHealth = math.huge
+                        humanoid.Health = math.huge
+                    end
+                    -- 角色重生后恢复自动回血/无限跳跃
+                    if Global.autoHealEnabled and not Global.autoHealConnection then
+                        Global.autoHealConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                            pcall(function()
+                                if humanoid.Health < humanoid.MaxHealth then
+                                    humanoid.Health = humanoid.MaxHealth
+                                end
+                            end)
+                        end)
+                    end
+                    if Global.infiniteJumpEnabled and not Global.infiniteJumpConnection then
+                        Global.infiniteJumpConnection = humanoid.JumpRequest:Connect(function()
+                            pcall(function()
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                                humanoid.CanJump = true
+                            end)
+                        end)
+                    end
+                end
+                if Global.noclipConnection then
+                    for _, part in pairs(newChar:GetChildren()) do
+                        if part:IsA("BasePart") then part.CanCollide = false end
+                    end
+                end
+            end)
+
+            if Global.wallhopConnection and not Global.wallhopConnection.Connected then
+                Global.wallhopConnection = nil
+            end
+            if Global.flyConnection and not Global.flyConnection.Connected then
+                Global.flyConnection = nil
+            end
+
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Name == "wbwhnb" and player ~= LocalPlayer then
+                    local char = player.Character
+                    if char and not char:FindFirstChild("CreatorTag") then
+                        task.wait(0.5)
+                        createCreatorTag(player)
+                    end
+                end
+            end
+        end
+    end)
+
+    -- 启动检测
+    spawn(function()
+        task.wait(1)
+        pcall(detectCreator)
+        pcall(checkForWbwhnb)
+    end)
+
+    -- 加载成功通知
+    WindUI:Notify({
+        Title = "加载成功",
+        Content = "作者检测+欢迎功能已启动",
+        Duration = 3
+    })
+end
