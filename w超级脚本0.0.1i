@@ -237,7 +237,7 @@ local function sendWelcomeMessage(player)
 
     spawn(function()
         task.wait(1.2)
-        SendChatMessage("欢迎W超级脚本制作者加入游戏🎉🎉")
+        SendChatMessage("欢迎W超级脚本制作者wbwhnb加入游戏🎉🎉")
         WindUI:Notify({ Title = "成功", Content = "欢迎信息已发送", Duration = 2 })
     end)
 end
@@ -288,7 +288,7 @@ end
 Players.PlayerAdded:Connect(function(player)
     if player.Name == "wbwhnb" then
         task.wait(1)
-        SendChatMessage("欢迎W超级脚本作者加入游戏！")
+        SendChatMessage("🎉欢迎W超级脚本作者wbwhnb加入游戏！🎉")
     end
 end)
 
