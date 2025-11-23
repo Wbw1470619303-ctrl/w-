@@ -11,7 +11,11 @@ local Global = {
     rainbowAnimationConnection = nil,
     flyConnection = nil,
     creatorTagInstances = {},
-    welcomeSent = false
+    welcomeSent = false,
+    -- 新增：俄亥俄州脚本变量
+    ohioScript = {
+        loaded = false -- 标记脚本是否已加载
+    }
 }
 
 -- 框架加载
@@ -755,6 +759,42 @@ function createMainUI()
                 WindUI:Notify({ Title = "成功", Content = "自动售卖已激活", Duration = 3 })
             else
                 WindUI:Notify({ Title = "关闭", Content = "自动售卖已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：俄亥俄州Tab（叶脚本功能）
+    local OhioTab = MainWindow:Tab({ Title = "俄亥俄州", Icon = "map" })
+    OhioTab:Section({ Title = "叶脚本功能" })
+
+    -- 俄亥俄州：加载叶脚本
+    OhioTab:Button({
+        Title = "加载叶脚本",
+        Callback = function()
+            if Global.ohioScript.loaded then
+                WindUI:Notify({ Title = "提示", Content = "叶脚本已加载，无需重复操作", Duration = 3 })
+                return
+            end
+
+            -- 全程pcall包裹，适配Delta避免崩溃
+            local successLoad, scriptContent = pcall(function()
+                return game:HttpGet("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/YE-%20Scripts-OHIO.lua", true)
+            end)
+
+            if not successLoad then
+                WindUI:Notify({ Title = "加载失败", Content = "叶脚本链接无法访问，请检查网络", Duration = 3 })
+                return
+            end
+
+            local successExec = pcall(function()
+                loadstring(scriptContent)()
+            end)
+
+            if successExec then
+                Global.ohioScript.loaded = true
+                WindUI:Notify({ Title = "成功", Content = "俄亥俄州叶脚本已加载", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "叶脚本不兼容 Delta 或语法错误", Duration = 3 })
             end
         end
     })
