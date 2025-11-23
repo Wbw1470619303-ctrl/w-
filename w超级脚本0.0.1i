@@ -52,7 +52,7 @@ end
 
 Global.WindUI = WindUI
 
--- 预加载服务（修复TextChatService获取逻辑）
+-- 预加载服务
 local LocalPlayer = game.Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -60,8 +60,9 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService") -- 新增：适配手机端输入
--- 修复：正确获取TextChatService（pcall返回success+结果）
+local UserInputService = game:GetService("UserInputService")
+
+-- 修复：正确获取TextChatService
 local TextChatService
 local successTextChat = pcall(function()
     TextChatService = game:GetService("TextChatService")
@@ -102,7 +103,7 @@ local function startRainbowAnimation(openButton)
     end)
 end
 
--- 标签创建（修复：调整显示参数+Parent，解决黑线/不显示）
+-- 标签创建
 local function createCreatorTag(player)
     if not player or player == LocalPlayer or not player.Character then return end
     local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
@@ -117,42 +118,38 @@ local function createCreatorTag(player)
         local bg = Instance.new("BillboardGui")
         bg.Name = "CreatorTag"
         bg.Adornee = humanoidRootPart
-        bg.Size = UDim2.fromOffset(300, 70) -- 增大尺寸适配文字
+        bg.Size = UDim2.fromOffset(300, 70)
         bg.AlwaysOnTop = true
-        bg.Parent = Workspace -- 改为Workspace，避免角色层级遮挡
+        bg.Parent = Workspace
         bg.MaxDistance = 600
-        bg.ZIndexBehavior = Enum.ZIndexBehavior.Global -- 强制最上层显示
+        bg.ZIndexBehavior = Enum.ZIndexBehavior.Global
 
-        -- 像素风边框
         local stroke = Instance.new("UIStroke")
         stroke.Thickness = 3
         stroke.Color = Color3.new(0, 1, 1)
         stroke.Parent = bg
 
-        -- 背景（降低透明度过高问题）
         local frame = Instance.new("Frame")
         frame.Size = UDim2.fromScale(1, 1)
-        frame.BackgroundTransparency = 0.1 -- 减少透明，避免"黑线"
+        frame.BackgroundTransparency = 0.1
         frame.BackgroundColor3 = Color3.new(0, 0, 0)
         local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0, 4)
         corner.Parent = frame
         frame.Parent = bg
 
-        -- 核心文字（固定作者名+兼容字体）
         local textLabel = Instance.new("TextLabel")
         textLabel.Size = UDim2.fromScale(1, 1)
         textLabel.BackgroundTransparency = 1
-        textLabel.Text = "[W] 超级脚本制作者 wbwhnb" -- 直接写死作者名，避免拼接错误
+        textLabel.Text = "[W] 超级脚本制作者 wbwhnb"
         textLabel.TextColor3 = Color3.new(1, 0.8, 0)
-        textLabel.TextSize = 24 -- 放大字号，增强可读性
-        textLabel.Font = Enum.Font.RobotoCondensed -- Delta兼容字体
+        textLabel.TextSize = 24
+        textLabel.Font = Enum.Font.RobotoCondensed
         textLabel.TextWrapped = true
         textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-        textLabel.TextStrokeTransparency = 0 -- 增强描边，避免文字模糊
+        textLabel.TextStrokeTransparency = 0
         textLabel.Parent = frame
 
-        -- 底部装饰条
         local bottomBar = Instance.new("Frame")
         bottomBar.Size = UDim2.fromScale(1, 0.15)
         bottomBar.Position = UDim2.fromScale(0, 0.85)
@@ -168,13 +165,12 @@ local function createCreatorTag(player)
 
     if success and billboardGui then
         Global.creatorTagInstances[player.UserId] = billboardGui
-        -- 已删除：作者标签就绪通知
     else
         WindUI:Notify({ Title = "标签提示", Content = "作者标识创建完成", Duration = 2 })
     end
 end
 
--- 聊天消息发送（适配修复后的TextChatService）
+-- 聊天消息发送
 local function SendChatMessage(message)
     pcall(function()
         if successTextChat and TextChatService then
@@ -358,59 +354,119 @@ function createMainUI()
     local GeneralTab = MainWindow:Tab({ Title = "通用功能", Icon = "settings" })
     GeneralTab:Section({ Title = "基础属性调整" })
 
-    -- 速度调节
-    GeneralTab:Slider({
-        Title = "移动速度",
-        Min = 16,
-        Max = 200,
-        Default = Global.currentWalkSpeed,
-        Color = Color3.new(0, 1, 1),
-        Increment = 1,
-        ValueName = "Speed",
-        Callback = function(value)
-            Global.currentWalkSpeed = value
-            local char = waitForCharacter()
-            if char then
-                local humanoid = char:FindFirstChildOfClass("Humanoid")
-                if humanoid then humanoid.WalkSpeed = value end
+    -- 速度调节按钮（替代滑条）
+    GeneralTab:Button({
+        Title = "速度: 正常(16)",
+        Callback = function()
+            if Global.currentWalkSpeed == 16 then
+                Global.currentWalkSpeed = 50
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.WalkSpeed = 50 end
+                end
+                WindUI:Notify({ Title = "速度设置", Content = "移动速度已设置为: 50", Duration = 2 })
+            elseif Global.currentWalkSpeed == 50 then
+                Global.currentWalkSpeed = 100
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.WalkSpeed = 100 end
+                end
+                WindUI:Notify({ Title = "速度设置", Content = "移动速度已设置为: 100", Duration = 2 })
+            elseif Global.currentWalkSpeed == 100 then
+                Global.currentWalkSpeed = 200
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.WalkSpeed = 200 end
+                end
+                WindUI:Notify({ Title = "速度设置", Content = "移动速度已设置为: 200", Duration = 2 })
+            else
+                Global.currentWalkSpeed = 16
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.WalkSpeed = 16 end
+                end
+                WindUI:Notify({ Title = "速度设置", Content = "移动速度已设置为: 16", Duration = 2 })
             end
         end
     })
 
-    -- 跳跃高度调节
-    GeneralTab:Slider({
-        Title = "跳跃高度",
-        Min = 50,
-        Max = 200,
-        Default = Global.currentJumpPower,
-        Color = Color3.new(1, 0, 1),
-        Increment = 1,
-        ValueName = "Power",
-        Callback = function(value)
-            Global.currentJumpPower = value
-            local char = waitForCharacter()
-            if char then
-                local humanoid = char:FindFirstChildOfClass("Humanoid")
-                if humanoid then humanoid.JumpPower = value end
+    -- 跳跃高度调节按钮（替代滑条）
+    GeneralTab:Button({
+        Title = "跳跃: 正常(50)",
+        Callback = function()
+            if Global.currentJumpPower == 50 then
+                Global.currentJumpPower = 100
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.JumpPower = 100 end
+                end
+                WindUI:Notify({ Title = "跳跃设置", Content = "跳跃高度已设置为: 100", Duration = 2 })
+            elseif Global.currentJumpPower == 100 then
+                Global.currentJumpPower = 150
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.JumpPower = 150 end
+                end
+                WindUI:Notify({ Title = "跳跃设置", Content = "跳跃高度已设置为: 150", Duration = 2 })
+            elseif Global.currentJumpPower == 150 then
+                Global.currentJumpPower = 200
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.JumpPower = 200 end
+                end
+                WindUI:Notify({ Title = "跳跃设置", Content = "跳跃高度已设置为: 200", Duration = 2 })
+            else
+                Global.currentJumpPower = 50
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then humanoid.JumpPower = 50 end
+                end
+                WindUI:Notify({ Title = "跳跃设置", Content = "跳跃高度已设置为: 50", Duration = 2 })
             end
         end
     })
 
-    -- 新增：手机端移动灵敏度调节（适配触摸操作）
-    GeneralTab:Slider({
-        Title = "移动灵敏度",
-        Min = 0.5,
-        Max = 5,
-        Default = Global.currentMoveSensitivity,
-        Color = Color3.new(0.2, 0.8, 0.5),
-        Increment = 0.1,
-        ValueName = "Sens",
-        Callback = function(value)
-            Global.currentMoveSensitivity = value
-            pcall(function()
-                local mouse = LocalPlayer:GetMouse()
-                mouse.Sensitivity = value -- 同步手机端触摸灵敏度
-            end)
+    -- 移动灵敏度调节按钮（替代滑条）
+    GeneralTab:Button({
+        Title = "灵敏度: 正常(1)",
+        Callback = function()
+            if Global.currentMoveSensitivity == 1 then
+                Global.currentMoveSensitivity = 2
+                pcall(function()
+                    local mouse = LocalPlayer:GetMouse()
+                    mouse.Sensitivity = 2
+                end)
+                WindUI:Notify({ Title = "灵敏度设置", Content = "移动灵敏度已设置为: 2", Duration = 2 })
+            elseif Global.currentMoveSensitivity == 2 then
+                Global.currentMoveSensitivity = 3
+                pcall(function()
+                    local mouse = LocalPlayer:GetMouse()
+                    mouse.Sensitivity = 3
+                end)
+                WindUI:Notify({ Title = "灵敏度设置", Content = "移动灵敏度已设置为: 3", Duration = 2 })
+            elseif Global.currentMoveSensitivity == 3 then
+                Global.currentMoveSensitivity = 5
+                pcall(function()
+                    local mouse = LocalPlayer:GetMouse()
+                    mouse.Sensitivity = 5
+                end)
+                WindUI:Notify({ Title = "灵敏度设置", Content = "移动灵敏度已设置为: 5", Duration = 2 })
+            else
+                Global.currentMoveSensitivity = 1
+                pcall(function()
+                    local mouse = LocalPlayer:GetMouse()
+                    mouse.Sensitivity = 1
+                end)
+                WindUI:Notify({ Title = "灵敏度设置", Content = "移动灵敏度已设置为: 1", Duration = 2 })
+            end
         end
     })
 
@@ -489,14 +545,13 @@ function createMainUI()
         end
     })
 
-    -- 新增：自动回血（适配手机端，无需手动操作）
+    -- 自动回血
     GeneralTab:Toggle({
         Title = "自动回血",
         Default = Global.autoHealEnabled,
         Callback = function(state)
             Global.autoHealEnabled = state
 
-            -- 断开原有连接
             if Global.autoHealConnection then
                 Global.autoHealConnection:Disconnect()
                 Global.autoHealConnection = nil
@@ -507,7 +562,6 @@ function createMainUI()
                 if char then
                     local humanoid = char:FindFirstChildOfClass("Humanoid")
                     if humanoid then
-                        -- 保持血量满
                         Global.autoHealConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
                             pcall(function()
                                 if humanoid.Health < humanoid.MaxHealth then
@@ -528,14 +582,13 @@ function createMainUI()
         end
     })
 
-    -- 新增：无限跳跃（适配手机端触摸跳跃）
+    -- 无限跳跃
     GeneralTab:Toggle({
         Title = "无限跳跃",
         Default = Global.infiniteJumpEnabled,
         Callback = function(state)
             Global.infiniteJumpEnabled = state
 
-            -- 断开原有连接
             if Global.infiniteJumpConnection then
                 Global.infiniteJumpConnection:Disconnect()
                 Global.infiniteJumpConnection = nil
@@ -546,11 +599,10 @@ function createMainUI()
                 if char then
                     local humanoid = char:FindFirstChildOfClass("Humanoid")
                     if humanoid then
-                        -- 监听手机端跳跃请求
                         Global.infiniteJumpConnection = humanoid.JumpRequest:Connect(function()
                             pcall(function()
                                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                                humanoid.CanJump = true -- 强制允许跳跃
+                                humanoid.CanJump = true
                             end)
                         end)
                         WindUI:Notify({ Title = "成功", Content = "无限跳跃已激活（点击跳跃键即可）", Duration = 3 })
@@ -566,7 +618,7 @@ function createMainUI()
         end
     })
 
-    -- 新增：视角锁定（适配手机端防视角漂移）
+    -- 视角锁定
     GeneralTab:Toggle({
         Title = "视角锁定",
         Default = Global.cameraLocked,
@@ -576,14 +628,12 @@ function createMainUI()
             if not camera then return end
 
             if state then
-                -- 保存原视角模式
                 Global.originalCameraType = camera.CameraType
                 pcall(function()
-                    camera.CameraType = Enum.CameraType.Fixed -- 锁定视角
+                    camera.CameraType = Enum.CameraType.Fixed
                 end)
                 WindUI:Notify({ Title = "成功", Content = "视角已锁定（防漂移）", Duration = 3 })
             else
-                -- 恢复原视角模式
                 if Global.originalCameraType then
                     pcall(function()
                         camera.CameraType = Global.originalCameraType
@@ -594,7 +644,7 @@ function createMainUI()
         end
     })
 
-    -- 新增：快速回血（手机端紧急一键回满）
+    -- 快速回血
     GeneralTab:Button({
         Title = "快速回血",
         Callback = function()
@@ -929,7 +979,6 @@ function createMainUI()
                 return
             end
 
-            -- 全程pcall包裹，适配Delta避免崩溃
             local successLoad, scriptContent = pcall(function()
                 return game:HttpGet("https://raw.githubusercontent.com/roblox-ye/QQ515966991/refs/heads/main/YE-%20Scripts-OHIO.lua", true)
             end)
