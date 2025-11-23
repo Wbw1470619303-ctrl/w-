@@ -15,7 +15,15 @@ local Global = {
     -- 新增：俄亥俄州脚本变量
     ohioScript = {
         loaded = false -- 标记脚本是否已加载
-    }
+    },
+    -- 新增：基础功能扩展变量（适配手机端）
+    autoHealEnabled = false,
+    autoHealConnection = nil,
+    infiniteJumpEnabled = false,
+    infiniteJumpConnection = nil,
+    cameraLocked = false,
+    originalCameraType = nil,
+    currentMoveSensitivity = 1 -- 手机端触摸灵敏度
 }
 
 -- 框架加载
@@ -52,6 +60,7 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService") -- 新增：适配手机端输入
 -- 修复：正确获取TextChatService（pcall返回success+结果）
 local TextChatService
 local successTextChat = pcall(function()
@@ -387,6 +396,24 @@ function createMainUI()
         end
     })
 
+    -- 新增：手机端移动灵敏度调节（适配触摸操作）
+    GeneralTab:Slider({
+        Title = "移动灵敏度",
+        Min = 0.5,
+        Max = 5,
+        Default = Global.currentMoveSensitivity,
+        Color = Color3.new(0.2, 0.8, 0.5),
+        Increment = 0.1,
+        ValueName = "Sens",
+        Callback = function(value)
+            Global.currentMoveSensitivity = value
+            pcall(function()
+                local mouse = LocalPlayer:GetMouse()
+                mouse.Sensitivity = value -- 同步手机端触摸灵敏度
+            end)
+        end
+    })
+
     -- 夜视模式
     GeneralTab:Toggle({
         Title = "夜视模式",
@@ -455,6 +482,132 @@ function createMainUI()
                         humanoid.Health = 100
                         WindUI:Notify({ Title = "关闭", Content = "无敌模式已关闭", Duration = 3 })
                     end
+                end
+            else
+                WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+            end
+        end
+    })
+
+    -- 新增：自动回血（适配手机端，无需手动操作）
+    GeneralTab:Toggle({
+        Title = "自动回血",
+        Default = Global.autoHealEnabled,
+        Callback = function(state)
+            Global.autoHealEnabled = state
+
+            -- 断开原有连接
+            if Global.autoHealConnection then
+                Global.autoHealConnection:Disconnect()
+                Global.autoHealConnection = nil
+            end
+
+            if state then
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        -- 保持血量满
+                        Global.autoHealConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                            pcall(function()
+                                if humanoid.Health < humanoid.MaxHealth then
+                                    humanoid.Health = humanoid.MaxHealth
+                                end
+                            end)
+                        end)
+                        WindUI:Notify({ Title = "成功", Content = "自动回血已激活", Duration = 3 })
+                    else
+                        WindUI:Notify({ Title = "错误", Content = "未找到角色生命组件", Duration = 2 })
+                    end
+                else
+                    WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+                end
+            else
+                WindUI:Notify({ Title = "关闭", Content = "自动回血已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：无限跳跃（适配手机端触摸跳跃）
+    GeneralTab:Toggle({
+        Title = "无限跳跃",
+        Default = Global.infiniteJumpEnabled,
+        Callback = function(state)
+            Global.infiniteJumpEnabled = state
+
+            -- 断开原有连接
+            if Global.infiniteJumpConnection then
+                Global.infiniteJumpConnection:Disconnect()
+                Global.infiniteJumpConnection = nil
+            end
+
+            if state then
+                local char = waitForCharacter()
+                if char then
+                    local humanoid = char:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        -- 监听手机端跳跃请求
+                        Global.infiniteJumpConnection = humanoid.JumpRequest:Connect(function()
+                            pcall(function()
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                                humanoid.CanJump = true -- 强制允许跳跃
+                            end)
+                        end)
+                        WindUI:Notify({ Title = "成功", Content = "无限跳跃已激活（点击跳跃键即可）", Duration = 3 })
+                    else
+                        WindUI:Notify({ Title = "错误", Content = "未找到角色跳跃组件", Duration = 2 })
+                    end
+                else
+                    WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
+                end
+            else
+                WindUI:Notify({ Title = "关闭", Content = "无限跳跃已关闭", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：视角锁定（适配手机端防视角漂移）
+    GeneralTab:Toggle({
+        Title = "视角锁定",
+        Default = Global.cameraLocked,
+        Callback = function(state)
+            Global.cameraLocked = state
+            local camera = Workspace.CurrentCamera
+            if not camera then return end
+
+            if state then
+                -- 保存原视角模式
+                Global.originalCameraType = camera.CameraType
+                pcall(function()
+                    camera.CameraType = Enum.CameraType.Fixed -- 锁定视角
+                end)
+                WindUI:Notify({ Title = "成功", Content = "视角已锁定（防漂移）", Duration = 3 })
+            else
+                -- 恢复原视角模式
+                if Global.originalCameraType then
+                    pcall(function()
+                        camera.CameraType = Global.originalCameraType
+                    end)
+                end
+                WindUI:Notify({ Title = "关闭", Content = "视角锁定已解除", Duration = 3 })
+            end
+        end
+    })
+
+    -- 新增：快速回血（手机端紧急一键回满）
+    GeneralTab:Button({
+        Title = "快速回血",
+        Callback = function()
+            local char = waitForCharacter()
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    pcall(function()
+                        humanoid.Health = humanoid.MaxHealth
+                    end)
+                    WindUI:Notify({ Title = "成功", Content = "血量已回满", Duration = 2 })
+                else
+                    WindUI:Notify({ Title = "错误", Content = "未找到角色生命组件", Duration = 2 })
                 end
             else
                 WindUI:Notify({ Title = "错误", Content = "角色未加载完成", Duration = 2 })
@@ -824,6 +977,24 @@ function createMainUI()
                     if Global.godmodeEnabled then
                         humanoid.MaxHealth = math.huge
                         humanoid.Health = math.huge
+                    end
+                    -- 角色重生后恢复自动回血/无限跳跃
+                    if Global.autoHealEnabled and not Global.autoHealConnection then
+                        Global.autoHealConnection = humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                            pcall(function()
+                                if humanoid.Health < humanoid.MaxHealth then
+                                    humanoid.Health = humanoid.MaxHealth
+                                end
+                            end)
+                        end)
+                    end
+                    if Global.infiniteJumpEnabled and not Global.infiniteJumpConnection then
+                        Global.infiniteJumpConnection = humanoid.JumpRequest:Connect(function()
+                            pcall(function()
+                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                                humanoid.CanJump = true
+                            end)
+                        end)
                     end
                 end
                 if Global.noclipConnection then
