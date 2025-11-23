@@ -811,6 +811,20 @@ function createMainUI()
             end
         end
     })
+    -- 新增：xttt物体飞行（自然灾害）
+    FunTab:Button({
+        Title = "xttt物体飞行（自然灾害）",
+        Callback = function()
+            local successLoad = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/cytj777i/6669178/main/fly-boat"))()
+            end)
+            if successLoad then
+                WindUI:Notify({ Title = "成功", Content = "物体飞行（自然灾害）脚本已执行", Duration = 3 })
+            else
+                WindUI:Notify({ Title = "执行失败", Content = "脚本不兼容 Delta 或链接失效", Duration = 3 })
+            end
+        end
+    })
 
     -- DOORS Tab
     local DoorsTab = MainWindow:Tab({ Title = "DOORS", Icon = "door-open" })
