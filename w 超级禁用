@@ -1,0 +1,254 @@
+-- 创建GUI（我把检测服务器id删了，所有有摔落伤害的服务器里都可用）
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local lp = Players.LocalPlayer
+
+-- 等待玩家加载
+if not lp then
+    lp = Players.PlayerAdded:Wait()
+end
+
+-- 创建主GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AntiFallGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = lp:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 200, 0, 100)
+MainFrame.Position = UDim2.new(0.5, -100, 0, 10)
+MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+
+-- 标题栏
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 25)
+TitleBar.Position = UDim2.new(0, 0, 0, 0)
+TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Name = "TitleLabel"
+TitleLabel.Size = UDim2.new(1, -50, 1, 0)
+TitleLabel.Position = UDim2.new(0, 5, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "w超级禁用摔落伤害脚本"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.TextSize = 14
+TitleLabel.Font = Enum.Font.Gotham
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = TitleBar
+
+-- 最小化按钮
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MinimizeButton"
+MinimizeButton.Size = UDim2.new(0, 20, 0, 20)
+MinimizeButton.Position = UDim2.new(1, -45, 0, 2)
+MinimizeButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+MinimizeButton.BorderSizePixel = 0
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeButton.TextSize = 14
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.Parent = TitleBar
+
+-- 关闭按钮
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Size = UDim2.new(0, 20, 0, 20)
+CloseButton.Position = UDim2.new(1, -20, 0, 2)
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+CloseButton.BorderSizePixel = 0
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 12
+CloseButton.Font = Enum.Font.Gotham
+CloseButton.Parent = TitleBar
+
+-- 内容区域
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Size = UDim2.new(1, 0, 1, -25)
+ContentFrame.Position = UDim2.new(0, 0, 0, 25)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.Parent = MainFrame
+
+-- 开关按钮
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Size = UDim2.new(0, 120, 0, 40)
+ToggleButton.Position = UDim2.new(0.5, -60, 0.5, -20)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Text = "开启"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 16
+ToggleButton.Font = Enum.Font.Gotham
+ToggleButton.Parent = ContentFrame
+
+-- 禁用摔落功能变量
+local rs = game:GetService("RunService")
+local hb = rs.Heartbeat
+local rsd = rs.RenderStepped
+local z = Vector3.zero
+local isEnabled = false
+local currentConnections = {}
+
+-- 禁用摔落功能函数
+local function applyAntiFall(character)
+    if not character then return end
+
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
+    if not humanoidRootPart then return end
+
+    local connection = hb:Connect(function()
+        if not humanoidRootPart or not humanoidRootPart.Parent then
+            if connection then
+                connection:Disconnect()
+            end
+            return
+        end
+
+        local velocity = humanoidRootPart.AssemblyLinearVelocity
+        humanoidRootPart.AssemblyLinearVelocity = z
+        rsd:Wait()
+        humanoidRootPart.AssemblyLinearVelocity = velocity
+    end)
+
+    table.insert(currentConnections, connection)
+end
+
+local function removeAntiFall()
+    for _, connection in ipairs(currentConnections) do
+        if connection then
+            connection:Disconnect()
+        end
+    end
+    currentConnections = {}
+end
+
+-- 切换禁用摔落功能
+local function toggleAntiFall()
+    isEnabled = not isEnabled
+
+    if isEnabled then
+        ToggleButton.Text = "关闭"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+
+        -- 应用当前角色
+        if lp.Character then
+            applyAntiFall(lp.Character)
+        end
+
+        -- 监听新角色
+        lp.CharacterAdded:Connect(function(character)
+            if isEnabled then
+                applyAntiFall(character)
+            end
+        end)
+
+        game:GetService("StarterGui"):SetCore("SendNotification",{
+            Title = "禁用摔落伤害",
+            Text = "禁用摔落功能已开启",
+            Duration = 3
+        })
+    else
+        ToggleButton.Text = "开启"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+        -- 移除所有连接
+        removeAntiFall()
+
+        game:GetService("StarterGui"):SetCore("SendNotification",{
+            Title = "禁用摔落伤害",
+            Text = "禁用摔落功能已关闭",
+            Duration = 3
+        })
+    end
+end
+
+-- 按钮点击事件
+ToggleButton.MouseButton1Click:Connect(toggleAntiFall)
+
+CloseButton.MouseButton1Click:Connect(function()
+    removeAntiFall()
+    ScreenGui:Destroy()
+end)
+
+-- 最小化功能
+local minimized = false
+MinimizeButton.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        -- 压缩界面
+        MainFrame.Size = UDim2.new(0, 200, 0, 25)
+        MinimizeButton.Text = "+"
+        ContentFrame.Visible = false
+    else
+        -- 展开界面
+        MainFrame.Size = UDim2.new(0, 200, 0, 100)
+        MinimizeButton.Text = "-"
+        ContentFrame.Visible = true
+    end
+end)
+
+-- 添加圆角效果
+local function addCorner(parent)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 5)
+    corner.Parent = parent
+end
+
+addCorner(MainFrame)
+addCorner(TitleBar)
+addCorner(ToggleButton)
+addCorner(MinimizeButton)
+addCorner(CloseButton)
+
+-- 添加悬停效果
+ToggleButton.MouseEnter:Connect(function()
+    if isEnabled then
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
+    else
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    end
+end)
+
+ToggleButton.MouseLeave:Connect(function()
+    if isEnabled then
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 180, 60)
+    else
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    end
+end)
+
+MinimizeButton.MouseEnter:Connect(function()
+    MinimizeButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+end)
+
+MinimizeButton.MouseLeave:Connect(function()
+    MinimizeButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+end)
+
+CloseButton.MouseEnter:Connect(function()
+    CloseButton.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+end)
+
+CloseButton.MouseLeave:Connect(function()
+    CloseButton.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+end)
+
+-- 发送加载成功通知
+game:GetService("StarterGui"):SetCore("SendNotification",{
+    Title = "w超级禁用摔落伤害脚本",
+    Text = "脚本加载成功",
+    Duration = 5
+})
