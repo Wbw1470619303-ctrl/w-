@@ -33,7 +33,30 @@ local Global = {
     -- 新增：森林中的99夜班脚本变量
     forest99Night = {
         loaded = false -- 标记脚本是否已加载
-    }
+    },
+    -- 新增通用功能变量
+    antiAfkEnabled = false,
+    antiAfkConnection = nil,
+    autoClickerEnabled = false,
+    autoClickerConnection = nil,
+    espEnabled = false,
+    espConnections = {},
+    fullBrightEnabled = false,
+    originalLightingSettings = {},
+    noClipEnabled = false,
+    flySpeed = 50,
+    aimBotEnabled = false,
+    aimBotConnection = nil,
+    playerEspBoxes = {},
+    xrayEnabled = false,
+    speedHackEnabled = false,
+    speedHackConnection = nil,
+    jumpHackEnabled = false,
+    noRecoilEnabled = false,
+    infiniteAmmoEnabled = false,
+    instantRespawnEnabled = false,
+    autoFarmEnabled = false,
+    antiLagEnabled = false
 }
 
 -- 卡密验证函数
@@ -196,6 +219,269 @@ local function verifyKeySystem()
     return false
 end
 
+-- 新增通用功能函数
+local function setupAntiAFK()
+    if Global.antiAfkEnabled then return end
+    
+    Global.antiAfkEnabled = true
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    
+    Global.antiAfkConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+            task.wait(0.1)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+        end)
+    end)
+end
+
+local function setupAutoClicker()
+    if Global.autoClickerEnabled then return end
+    
+    Global.autoClickerEnabled = true
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local UserInputService = game:GetService("UserInputService")
+    
+    Global.autoClickerConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+            task.wait(0.05)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+        end)
+    end)
+end
+
+local function createESPBox(player)
+    if Global.playerEspBoxes[player] then return end
+    
+    local character = player.Character
+    if not character then return end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return end
+    
+    local box = Instance.new("BoxHandleAdornment")
+    box.Name = "ESPBox"
+    box.Adornee = humanoidRootPart
+    box.AlwaysOnTop = true
+    box.ZIndex = 10
+    box.Size = Vector3.new(4, 6, 4)
+    box.Color3 = Color3.fromRGB(255, 0, 0)
+    box.Transparency = 0.5
+    box.Parent = humanoidRootPart
+    
+    Global.playerEspBoxes[player] = box
+    
+    -- 添加名称标签
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESPName"
+    billboard.Adornee = humanoidRootPart
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 4, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = humanoidRootPart
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = player.Name
+    label.TextColor3 = Color3.fromRGB(255, 255, 0)
+    label.TextSize = 14
+    label.Font = Enum.Font.RobotoCondensed
+    label.Parent = billboard
+end
+
+local function removeESPBox(player)
+    if Global.playerEspBoxes[player] then
+        Global.playerEspBoxes[player]:Destroy()
+        Global.playerEspBoxes[player] = nil
+    end
+end
+
+local function setupESP()
+    if Global.espEnabled then return end
+    
+    Global.espEnabled = true
+    local Players = game:GetService("Players")
+    
+    -- 为现有玩家创建ESP
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer then
+            if player.Character then
+                createESPBox(player)
+            end
+            player.CharacterAdded:Connect(function(character)
+                task.wait(1)
+                createESPBox(player)
+            end)
+        end
+    end
+    
+    -- 为新玩家创建ESP
+    Players.PlayerAdded:Connect(function(player)
+        player.CharacterAdded:Connect(function(character)
+            task.wait(1)
+            if Global.espEnabled then
+                createESPBox(player)
+            end
+        end)
+    end)
+end
+
+local function removeESP()
+    Global.espEnabled = false
+    for player, box in pairs(Global.playerEspBoxes) do
+        box:Destroy()
+    end
+    Global.playerEspBoxes = {}
+end
+
+local function setupFullBright()
+    if Global.fullBrightEnabled then return end
+    
+    Global.fullBrightEnabled = true
+    local Lighting = game:GetService("Lighting")
+    
+    -- 保存原始设置
+    Global.originalLightingSettings = {
+        Ambient = Lighting.Ambient,
+        OutdoorAmbient = Lighting.OutdoorAmbient,
+        Brightness = Lighting.Brightness,
+        GlobalShadows = Lighting.GlobalShadows
+    }
+    
+    -- 应用全亮设置
+    Lighting.Ambient = Color3.new(1, 1, 1)
+    Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+    Lighting.Brightness = 2
+    Lighting.GlobalShadows = false
+    Lighting.ClockTime = 12
+end
+
+local function restoreLighting()
+    if not Global.fullBrightEnabled then return end
+    
+    Global.fullBrightEnabled = false
+    local Lighting = game:GetService("Lighting")
+    
+    if Global.originalLightingSettings.Ambient then
+        Lighting.Ambient = Global.originalLightingSettings.Ambient
+        Lighting.OutdoorAmbient = Global.originalLightingSettings.OutdoorAmbient
+        Lighting.Brightness = Global.originalLightingSettings.Brightness
+        Lighting.GlobalShadows = Global.originalLightingSettings.GlobalShadows
+    end
+end
+
+local function setupXRay()
+    if Global.xrayEnabled then return end
+    
+    Global.xrayEnabled = true
+    local Workspace = game:GetService("Workspace")
+    
+    for _, part in ipairs(Workspace:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.5 then
+            part.LocalTransparencyModifier = 0.5
+        end
+    end
+end
+
+local function removeXRay()
+    Global.xrayEnabled = false
+    local Workspace = game:GetService("Workspace")
+    
+    for _, part in ipairs(Workspace:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.LocalTransparencyModifier = 0
+        end
+    end
+end
+
+local function setupSpeedHack()
+    if Global.speedHackEnabled then return end
+    
+    Global.speedHackEnabled = true
+    local RunService = game:GetService("RunService")
+    
+    Global.speedHackConnection = RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local character = game.Players.LocalPlayer.Character
+            if character and character:FindFirstChild("Humanoid") then
+                character.Humanoid.WalkSpeed = 100
+            end
+        end)
+    end)
+end
+
+local function setupJumpHack()
+    if Global.jumpHackEnabled then return end
+    
+    Global.jumpHackEnabled = true
+    local character = game.Players.LocalPlayer.Character
+    if character and character:FindFirstChild("Humanoid") then
+        character.Humanoid.JumpPower = 150
+    end
+end
+
+local function setupNoRecoil()
+    Global.noRecoilEnabled = true
+    -- 这里需要根据具体游戏调整，通用方法是通过修改武器属性
+    for _, tool in ipairs(game.Players.LocalPlayer.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            for _, descendant in ipairs(tool:GetDescendants()) do
+                if descendant:IsA("NumberValue") and string.lower(descendant.Name):find("recoil") then
+                    descendant.Value = 0
+                end
+            end
+        end
+    end
+end
+
+local function setupInfiniteAmmo()
+    Global.infiniteAmmoEnabled = true
+    -- 通用无限弹药实现
+    for _, tool in ipairs(game.Players.LocalPlayer.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            for _, descendant in ipairs(tool:GetDescendants()) do
+                if descendant:IsA("IntValue") and string.lower(descendant.Name):find("ammo") then
+                    descendant.Changed:Connect(function()
+                        if descendant.Value < 100 then
+                            descendant.Value = 999
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end
+
+local function setupInstantRespawn()
+    Global.instantRespawnEnabled = true
+    local Players = game:GetService("Players")
+    
+    Players.LocalPlayer.CharacterAdded:Connect(function(character)
+        task.wait(0.1)
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.BreakJointsOnDeath = false
+        end
+    end)
+end
+
+local function setupAntiLag()
+    Global.antiLagEnabled = true
+    local Lighting = game:GetService("Lighting")
+    local Workspace = game:GetService("Workspace")
+    
+    -- 减少图形质量以提高性能
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 1000
+    Workspace.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("ParticleEmitter") or descendant:IsA("Smoke") or descendant:IsA("Fire") then
+            descendant.Enabled = false
+        end
+    end)
+end
+
 -- 主脚本加载函数
 local function loadMainScript()
     -- 框架加载
@@ -231,6 +517,7 @@ local function loadMainScript()
     local CoreGui = game:GetService("CoreGui")
     local Players = game:GetService("Players")
     local UserInputService = game:GetService("UserInputService")
+    local TweenService = game:GetService("TweenService")
     
     -- 修复：正确获取TextChatService
     local TextChatService
@@ -520,8 +807,10 @@ local function loadMainScript()
             end
         })
         
-        -- 通用功能Tab
+        -- 通用功能Tab - 扩展版
         local GeneralTab = MainWindow:Tab({ Title = "通用功能", Icon = "settings" })
+        
+        -- 基础属性调整
         GeneralTab:Section({ Title = "基础属性调整" })
         
         -- 速度调节按钮（替代滑条）
@@ -639,6 +928,189 @@ local function loadMainScript()
                 end
             end
         })
+        
+        -- 新增：高级功能区
+        GeneralTab:Section({ Title = "高级功能" })
+        
+        -- 防AFK
+        GeneralTab:Toggle({
+            Title = "防AFK",
+            Default = Global.antiAfkEnabled,
+            Callback = function(state)
+                if state then
+                    setupAntiAFK()
+                    WindUI:Notify({ Title = "成功", Content = "防AFK已激活", Duration = 3 })
+                else
+                    if Global.antiAfkConnection then
+                        Global.antiAfkConnection:Disconnect()
+                        Global.antiAfkConnection = nil
+                    end
+                    Global.antiAfkEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "防AFK已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 自动点击器
+        GeneralTab:Toggle({
+            Title = "自动点击器",
+            Default = Global.autoClickerEnabled,
+            Callback = function(state)
+                if state then
+                    setupAutoClicker()
+                    WindUI:Notify({ Title = "成功", Content = "自动点击器已激活", Duration = 3 })
+                else
+                    if Global.autoClickerConnection then
+                        Global.autoClickerConnection:Disconnect()
+                        Global.autoClickerConnection = nil
+                    end
+                    Global.autoClickerEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "自动点击器已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- ESP玩家透视
+        GeneralTab:Toggle({
+            Title = "ESP玩家透视",
+            Default = Global.espEnabled,
+            Callback = function(state)
+                if state then
+                    setupESP()
+                    WindUI:Notify({ Title = "成功", Content = "ESP透视已激活", Duration = 3 })
+                else
+                    removeESP()
+                    WindUI:Notify({ Title = "关闭", Content = "ESP透视已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 全亮模式
+        GeneralTab:Toggle({
+            Title = "全亮模式",
+            Default = Global.fullBrightEnabled,
+            Callback = function(state)
+                if state then
+                    setupFullBright()
+                    WindUI:Notify({ Title = "成功", Content = "全亮模式已激活", Duration = 3 })
+                else
+                    restoreLighting()
+                    WindUI:Notify({ Title = "关闭", Content = "全亮模式已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- X射线透视
+        GeneralTab:Toggle({
+            Title = "X射线透视",
+            Default = Global.xrayEnabled,
+            Callback = function(state)
+                if state then
+                    setupXRay()
+                    WindUI:Notify({ Title = "成功", Content = "X射线透视已激活", Duration = 3 })
+                else
+                    removeXRay()
+                    WindUI:Notify({ Title = "关闭", Content = "X射线透视已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 速度黑客
+        GeneralTab:Toggle({
+            Title = "速度黑客",
+            Default = Global.speedHackEnabled,
+            Callback = function(state)
+                if state then
+                    setupSpeedHack()
+                    WindUI:Notify({ Title = "成功", Content = "速度黑客已激活", Duration = 3 })
+                else
+                    if Global.speedHackConnection then
+                        Global.speedHackConnection:Disconnect()
+                        Global.speedHackConnection = nil
+                    end
+                    Global.speedHackEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "速度黑客已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 跳跃黑客
+        GeneralTab:Toggle({
+            Title = "跳跃黑客",
+            Default = Global.jumpHackEnabled,
+            Callback = function(state)
+                if state then
+                    setupJumpHack()
+                    WindUI:Notify({ Title = "成功", Content = "跳跃黑客已激活", Duration = 3 })
+                else
+                    Global.jumpHackEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "跳跃黑客已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 无后坐力
+        GeneralTab:Toggle({
+            Title = "无后坐力",
+            Default = Global.noRecoilEnabled,
+            Callback = function(state)
+                if state then
+                    setupNoRecoil()
+                    WindUI:Notify({ Title = "成功", Content = "无后坐力已激活", Duration = 3 })
+                else
+                    Global.noRecoilEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "无后坐力已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 无限弹药
+        GeneralTab:Toggle({
+            Title = "无限弹药",
+            Default = Global.infiniteAmmoEnabled,
+            Callback = function(state)
+                if state then
+                    setupInfiniteAmmo()
+                    WindUI:Notify({ Title = "成功", Content = "无限弹药已激活", Duration = 3 })
+                else
+                    Global.infiniteAmmoEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "无限弹药已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 瞬间重生
+        GeneralTab:Toggle({
+            Title = "瞬间重生",
+            Default = Global.instantRespawnEnabled,
+            Callback = function(state)
+                if state then
+                    setupInstantRespawn()
+                    WindUI:Notify({ Title = "成功", Content = "瞬间重生已激活", Duration = 3 })
+                else
+                    Global.instantRespawnEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "瞬间重生已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 抗延迟模式
+        GeneralTab:Toggle({
+            Title = "抗延迟模式",
+            Default = Global.antiLagEnabled,
+            Callback = function(state)
+                if state then
+                    setupAntiLag()
+                    WindUI:Notify({ Title = "成功", Content = "抗延迟模式已激活", Duration = 3 })
+                else
+                    Global.antiLagEnabled = false
+                    WindUI:Notify({ Title = "关闭", Content = "抗延迟模式已关闭", Duration = 3 })
+                end
+            end
+        })
+        
+        -- 原有功能区域
+        GeneralTab:Section({ Title = "原有功能" })
         
         -- 夜视模式
         GeneralTab:Toggle({
