@@ -1,0 +1,205 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local LEG_MESH_ID = "101851696"
+local LEG_TEXTURE_ID = "101851254"
+local HEAD_MESH_ID = "134082579"
+local HEAD_TEXTURE_ID = "134082627"
+
+local GlobalConnections = {}
+local ActiveRenderConnections = {}
+
+local function clearGlobalConnections()
+    for _, conn in ipairs(GlobalConnections) do
+        if conn and conn.Connected then
+            conn:Disconnect()
+        end
+    end
+    table.clear(GlobalConnections)
+end
+
+local function clearRenderConnections()
+    for _, conn in ipairs(ActiveRenderConnections) do
+        if conn and conn.Connected then
+            conn:Disconnect()
+        end
+    end
+    table.clear(ActiveRenderConnections)
+end
+
+local function modifyRightLeg(character)
+    local rightLeg = character:FindFirstChild("Right Leg") or character:FindFirstChild("RightLowerLeg") or character:FindFirstChildOfClass("BasePart", function(part)
+        return part.Name:lower():find("right") and part.Name:lower():find("leg")
+    end)
+    if not rightLeg then return nil end
+
+    for _, child in ipairs(rightLeg:GetChildren()) do
+        if child:IsA("SpecialMesh") or child:IsA("SurfaceAppearance") then
+            child:Destroy()
+        end
+    end
+
+    local applySuccess, _ = pcall(function()
+        if rightLeg:IsA("MeshPart") then
+            rightLeg.MeshId = "rbxassetid://" .. LEG_MESH_ID
+            rightLeg.TextureID = "rbxassetid://" .. LEG_TEXTURE_ID
+        else
+            local legMesh = Instance.new("SpecialMesh")
+            legMesh.MeshType = Enum.MeshType.FileMesh
+            legMesh.MeshId = "rbxassetid://" .. LEG_MESH_ID
+            legMesh.TextureId = "rbxassetid://" .. LEG_TEXTURE_ID
+            legMesh.Scale = Vector3.new(1, 1, 1)
+            legMesh.Parent = rightLeg
+        end
+        rightLeg.Transparency = 0.1
+        rightLeg.BrickColor = BrickColor.new("Really black")
+        rightLeg.Material = Enum.Material.Plastic
+    end)
+
+    return applySuccess and rightLeg or nil
+end
+
+local function createFakeLeg(character, rightLeg)
+    if not rightLeg or not character then return end
+
+    local oldFakeLeg = character:FindFirstChild("FakeKorbloxLeg")
+    if oldFakeLeg then oldFakeLeg:Destroy() end
+
+    local fakeLeg = Instance.new("Part")
+    fakeLeg.Name = "FakeKorbloxLeg"
+    fakeLeg.Size = rightLeg.Size
+    fakeLeg.CFrame = rightLeg.CFrame
+    fakeLeg.Anchored = false
+    fakeLeg.CanCollide = false
+    fakeLeg.CanTouch = false
+    fakeLeg.CanQuery = false
+    fakeLeg.Transparency = 0
+    fakeLeg.BrickColor = BrickColor.new("Really black")
+    fakeLeg.Material = Enum.Material.Plastic
+
+    local legMesh = Instance.new("SpecialMesh")
+    legMesh.MeshType = Enum.MeshType.FileMesh
+    legMesh.MeshId = "rbxassetid://" .. LEG_MESH_ID
+    legMesh.TextureId = "rbxassetid://" .. LEG_TEXTURE_ID
+    legMesh.Scale = Vector3.new(1, 1, 1)
+    legMesh.Parent = fakeLeg
+    fakeLeg.Parent = character
+
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = rightLeg
+    weld.Part1 = fakeLeg
+    weld.Parent = rightLeg
+
+    rightLeg.Transparency = 1
+
+    local renderConn = RunService.Heartbeat:Connect(function()
+        if fakeLeg and rightLeg and fakeLeg.Parent and rightLeg.Parent then
+            fakeLeg.CFrame = rightLeg.CFrame
+        end
+    end)
+    table.insert(ActiveRenderConnections, renderConn)
+end
+
+local function forceModifyHead(character, head)
+    if not character or not head or not head:IsDescendantOf(workspace) then return false end
+
+    for _, child in ipairs(head:GetChildren()) do
+        if child:IsA("Decal") or child:IsA("SpecialMesh") or child:IsA("SurfaceAppearance") or child:IsA("Texture") or child:IsA("FileMesh") then
+            child:Destroy()
+        end
+    end
+
+    for _, accessory in ipairs(character:GetChildren()) do
+        if accessory:IsA("Accessory") then
+            local accessoryName = accessory.Name:lower()
+            if accessoryName:find("hair") or accessoryName:find("hat") or accessoryName:find("face") or accessoryName:find("head") or accessoryName:find("mask") or accessoryName:find("glasses") or accessoryName:find("earring") then
+                accessory:Destroy()
+            end
+        end
+    end
+
+    local applySuccess, _ = pcall(function()
+        if head:IsA("MeshPart") then
+            head.MeshId = "rbxassetid://" .. HEAD_MESH_ID
+            head.TextureID = "rbxassetid://" .. HEAD_TEXTURE_ID
+        else
+            local headMesh = Instance.new("SpecialMesh")
+            headMesh.MeshType = Enum.MeshType.FileMesh
+            headMesh.MeshId = "rbxassetid://" .. HEAD_MESH_ID
+            headMesh.TextureId = "rbxassetid://" .. HEAD_TEXTURE_ID
+            headMesh.Scale = Vector3.new(1.25, 1.25, 1.25)
+            headMesh.Parent = head
+        end
+        head.Transparency = 0.1
+        head.BrickColor = BrickColor.new("Really black")
+        head.Material = Enum.Material.Plastic
+        head:GetPropertyChangedSignal("MeshId"):Connect(function()
+            if head.MeshId ~= "rbxassetid://" .. HEAD_MESH_ID then
+                head.MeshId = "rbxassetid://" .. HEAD_MESH_ID
+            end
+        end)
+        head:GetPropertyChangedSignal("TextureID"):Connect(function()
+            if head.TextureID ~= "rbxassetid://" .. HEAD_TEXTURE_ID then
+                head.TextureID = "rbxassetid://" .. HEAD_TEXTURE_ID
+            end
+        end)
+    end)
+
+    return applySuccess
+end
+
+local function startAppearanceGuard(character, head, rightLeg)
+    if not character or not head then return end
+
+    local guardConn = RunService.Heartbeat:Connect(function()
+        if not character:IsDescendantOf(workspace) then
+            guardConn:Disconnect()
+            return
+        end
+        if head:IsA("MeshPart") and head.MeshId ~= "rbxassetid://" .. HEAD_MESH_ID then
+            forceModifyHead(character, head)
+        end
+        if rightLeg and rightLeg:IsA("MeshPart") and rightLeg.MeshId ~= "rbxassetid://" .. LEG_MESH_ID then
+            modifyRightLeg(character)
+        end
+    end)
+    table.insert(ActiveRenderConnections, guardConn)
+end
+
+local function applyCustomCharacter(character)
+    clearRenderConnections()
+
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+    local head = character:WaitForChild("Head", 5)
+    if not humanoid or not rootPart or not head then
+        warn("角色核心部件加载失败，跳过外观修改")
+        return
+    end
+
+    repeat task.wait() until humanoid.RootPart ~= nil and humanoid.Health > 0 and character:IsDescendantOf(workspace)
+    task.wait(0.2)
+
+    local headModifySuccess = forceModifyHead(character, head)
+    local rightLeg = modifyRightLeg(character)
+    if rightLeg then
+        createFakeLeg(character, rightLeg)
+    end
+
+    task.wait(0.1)
+    if headModifySuccess then forceModifyHead(character, head) end
+    if rightLeg then modifyRightLeg(character) end
+
+    startAppearanceGuard(character, head, rightLeg)
+end
+
+clearGlobalConnections()
+
+table.insert(GlobalConnections, LocalPlayer.CharacterAdded:Connect(function(character)
+    task.spawn(applyCustomCharacter, character)
+end))
+
+if LocalPlayer.Character then
+    task.spawn(applyCustomCharacter, LocalPlayer.Character)
+end
