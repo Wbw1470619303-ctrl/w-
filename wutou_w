@@ -149,19 +149,63 @@ local function forceModifyHead(character, head)
     return applySuccess
 end
 
-local function startAppearanceGuard(character, head, rightLeg)
-    if not character or not head then return end
+local function isHeadCustomized(head)
+    if head:IsA("MeshPart") then
+        return head.MeshId == "rbxassetid://" .. HEAD_MESH_ID
+           and head.TextureID == "rbxassetid://" .. HEAD_TEXTURE_ID
+    else
+        for _, child in ipairs(head:GetChildren()) do
+            if child:IsA("SpecialMesh") and child.MeshId == "rbxassetid://" .. HEAD_MESH_ID then
+                return true
+            end
+        end
+        return false
+    end
+end
+
+local function startAppearanceGuard(character)
+    if not character then return end
+    local lastHeadFix = 0
+    local lastLegFix = 0
 
     local guardConn = RunService.Heartbeat:Connect(function()
         if not character:IsDescendantOf(workspace) then
             guardConn:Disconnect()
             return
         end
-        if head:IsA("MeshPart") and head.MeshId ~= "rbxassetid://" .. HEAD_MESH_ID then
+
+        local head = character:FindFirstChild("Head")
+        if head and not isHeadCustomized(head) and (tick() - lastHeadFix > 0.5) then
+            lastHeadFix = tick()
             forceModifyHead(character, head)
         end
-        if rightLeg and rightLeg:IsA("MeshPart") and rightLeg.MeshId ~= "rbxassetid://" .. LEG_MESH_ID then
-            modifyRightLeg(character)
+
+        local rightLeg = character:FindFirstChild("Right Leg")
+            or character:FindFirstChild("RightLowerLeg")
+            or character:FindFirstChildOfClass("BasePart", function(part)
+                return part.Name:lower():find("right") and part.Name:lower():find("leg")
+            end)
+
+        if rightLeg and rightLeg.Parent then
+            local isLegCustomized = false
+            if rightLeg:IsA("MeshPart") then
+                isLegCustomized = (rightLeg.MeshId == "rbxassetid://" .. LEG_MESH_ID)
+            else
+                for _, child in ipairs(rightLeg:GetChildren()) do
+                    if child:IsA("SpecialMesh") and child.MeshId == "rbxassetid://" .. LEG_MESH_ID then
+                        isLegCustomized = true
+                        break
+                    end
+                end
+            end
+
+            if not isLegCustomized and (tick() - lastLegFix > 0.5) then
+                lastLegFix = tick()
+                local newRightLeg = modifyRightLeg(character)
+                if newRightLeg then
+                    createFakeLeg(character, newRightLeg)
+                end
+            end
         end
     end)
     table.insert(ActiveRenderConnections, guardConn)
@@ -181,17 +225,21 @@ local function applyCustomCharacter(character)
     repeat task.wait() until humanoid.RootPart ~= nil and humanoid.Health > 0 and character:IsDescendantOf(workspace)
     task.wait(0.2)
 
-    local headModifySuccess = forceModifyHead(character, head)
+    forceModifyHead(character, head)
+    startAppearanceGuard(character)
+
     local rightLeg = modifyRightLeg(character)
     if rightLeg then
         createFakeLeg(character, rightLeg)
     end
 
     task.wait(0.1)
-    if headModifySuccess then forceModifyHead(character, head) end
-    if rightLeg then modifyRightLeg(character) end
-
-    startAppearanceGuard(character, head, rightLeg)
+    if head:IsDescendantOf(workspace) then
+        forceModifyHead(character, head)
+    end
+    if rightLeg and rightLeg.Parent then
+        modifyRightLeg(character)
+    end
 end
 
 clearGlobalConnections()
