@@ -605,6 +605,10 @@ Players.PlayerRemoving:Connect(function(plr)
 	updatePlayerList()
 end)
 
+-- ==================== 传送硬锁定核心修改 ====================
+-- 原理：BodyPosition + BodyGyro 是物理引擎级别的约束，服务器会同步给所有客户端
+-- 单纯改 CFrame 只有本地生效，别人看你还是漂移的
+
 function startTeleport()
 	if not selectedPlayer then
 		StatusLabel.Text = "错误: 未选择目标玩家"
@@ -612,17 +616,61 @@ function startTeleport()
 		return
 	end
 	if isFlinging then stopFling() end
+
 	local target = selectedPlayer
 	local localChar = LocalPlayer.Character
 	if not localChar then return end
 	local localHRP = localChar:FindFirstChild("HumanoidRootPart")
 	if not localHRP then return end
+
 	lastPosition = localHRP.CFrame
 	isTeleporting = true
 	TeleportBtn.Text = "停止"
 	TeleportBtn.BackgroundColor3 = Color3.fromRGB(80, 60, 0)
-	StatusLabel.Text = "正在循环传送 -> " .. target.DisplayName
+	StatusLabel.Text = "正在硬锁定 -> " .. target.DisplayName
 	StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+
+	-- 清理防甩飞约束，避免和传送约束冲突
+	cleanupAntiFlingConstraints()
+
+	-- 清理旧的传送约束
+	local oldBP = localHRP:FindFirstChild("TeleportBP")
+	if oldBP then oldBP:Destroy() end
+	local oldBG = localHRP:FindFirstChild("TeleportBG")
+	if oldBG then oldBG:Destroy() end
+
+	-- 【核心】创建 BodyPosition：把角色物理位置焊死在目标点
+	local bp = Instance.new("BodyPosition")
+	bp.Name = "TeleportBP"
+	bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+	bp.P = 9e5          -- 比例系数，越大越硬
+	bp.D = 5e5          -- 阻尼系数，防止抖动
+	bp.Position = localHRP.Position
+	bp.Parent = localHRP
+
+	-- 【核心】创建 BodyGyro：把角色朝向焊死
+	local bg = Instance.new("BodyGyro")
+	bg.Name = "TeleportBG"
+	bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+	bg.P = 9e5
+	bg.D = 5e5
+	bg.CFrame = localHRP.CFrame
+	bg.Parent = localHRP
+
+	-- 禁用碰撞，防止被目标/环境推开
+	for _, part in ipairs(localChar:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+		end
+	end
+
+	-- 禁用 Humanoid 自动旋转和站立状态，防止动画系统干扰朝向
+	local hum = localChar:FindFirstChild("Humanoid")
+	if hum then
+		hum.AutoRotate = false
+		hum.PlatformStand = true
+	end
+
 	teleportConnection = RunService.Heartbeat:Connect(function()
 		if not isTeleporting then return end
 		if not target or not target.Parent then
@@ -632,27 +680,49 @@ function startTeleport()
 			selectedPlayer = nil
 			return
 		end
+
 		local targetChar = target.Character
 		if not targetChar then return end
 		local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
 		if not targetHRP then return end
+
 		local myChar = LocalPlayer.Character
 		if not myChar then stopTeleport(); return end
 		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
 		if not myHRP then stopTeleport(); return end
 
+		-- 计算目标坐标（背后或前方）
+		local targetCF
 		if isFrontMode then
-			local frontCFrame = CFrame.lookAt(
+			targetCF = CFrame.lookAt(
 				targetHRP.Position + targetHRP.CFrame.LookVector * 4.5,
 				targetHRP.Position
 			)
-			myHRP.CFrame = frontCFrame
 		else
-			local behindCFrame = CFrame.lookAt(
+			targetCF = CFrame.lookAt(
 				targetHRP.Position - targetHRP.CFrame.LookVector * 4.5,
 				targetHRP.Position
 			)
-			myHRP.CFrame = behindCFrame
+		end
+
+		-- 【硬锁定】每帧把物理约束目标点更新到目标身后/身前
+		bp.Position = targetCF.Position
+		bg.CFrame = targetCF
+
+		-- 双重保险：直接覆盖 CFrame + 清零所有速度
+		myHRP.CFrame = targetCF
+		myHRP.AssemblyLinearVelocity = Vector3.zero
+		myHRP.AssemblyAngularVelocity = Vector3.zero
+		myHRP.RotVelocity = Vector3.zero
+
+		-- 同步冻结身体其他部位，防止肢体甩动暴露位置
+		for _, partName in ipairs({"Head", "UpperTorso", "LowerTorso", "Torso", "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"}) do
+			local part = myChar:FindFirstChild(partName)
+			if part and part:IsA("BasePart") then
+				part.AssemblyLinearVelocity = Vector3.zero
+				part.AssemblyAngularVelocity = Vector3.zero
+				part.RotVelocity = Vector3.zero
+			end
 		end
 	end)
 end
@@ -664,7 +734,32 @@ function stopTeleport()
 	TeleportBtn.BackgroundColor3 = Color3.fromRGB(0, 60, 45)
 	StatusLabel.Text = "传送已停止"
 	StatusLabel.TextColor3 = Color3.fromRGB(160, 160, 170)
+
+	local myChar = LocalPlayer.Character
+	if myChar then
+		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+		if myHRP then
+			local bp = myHRP:FindFirstChild("TeleportBP")
+			if bp then bp:Destroy() end
+			local bg = myHRP:FindFirstChild("TeleportBG")
+			if bg then bg:Destroy() end
+		end
+
+		local hum = myChar:FindFirstChild("Humanoid")
+		if hum then
+			hum.AutoRotate = true
+			hum.PlatformStand = false
+		end
+
+		-- 恢复碰撞
+		for _, part in ipairs(myChar:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+			end
+		end
+	end
 end
+-- ==================== 传送硬锁定核心修改结束 ====================
 
 function startFling()
 	if not selectedPlayer then
@@ -783,6 +878,7 @@ ReturnBtn.MouseButton1Click:Connect(stopAndReturn)
 FlingBtn.MouseButton1Click:Connect(function()
 	if isFlinging then stopFling() else startFling() end
 end)
+
 local function startAntiSaitamaLoop()
 	if isTeleporting then stopTeleport() end
 	if isFlinging then stopFling() end
