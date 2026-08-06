@@ -1,0 +1,896 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local isOpen = true
+local isTeleporting = false
+local isFlinging = false
+local selectedPlayer = nil
+local lastPosition = nil
+local teleportConnection = nil
+local flingConnection = nil
+local currentScale = 0.7
+local isFrontMode = false
+local antiSaitamaLooping = false
+local antiSaitamaConnection = nil
+local antiFlingEnabled = false
+local antiFlingHeartbeat = nil
+local antiFlingHeartbeat2 = nil
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "HackerTeleport_v1"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "Main"
+MainFrame.Size = UDim2.new(0, 290, 0, 540)
+MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+MainFrame.BackgroundTransparency = 0.12
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local UIScale = Instance.new("UIScale")
+UIScale.Scale = 0.7
+UIScale.Parent = MainFrame
+
+local GlassStroke = Instance.new("UIStroke")
+GlassStroke.Color = Color3.fromRGB(0, 230, 180)
+GlassStroke.Thickness = 1.2
+GlassStroke.Transparency = 0.35
+GlassStroke.Parent = MainFrame
+
+local GlowFrame = Instance.new("Frame")
+GlowFrame.Name = "Glow"
+GlowFrame.Size = UDim2.new(1, 8, 1, 8)
+GlowFrame.Position = UDim2.new(0, -4, 0, -4)
+GlowFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
+GlowFrame.BackgroundTransparency = 0.92
+GlowFrame.BorderSizePixel = 0
+GlowFrame.ZIndex = -1
+GlowFrame.Parent = MainFrame
+
+local GlowGradient = Instance.new("UIGradient")
+GlowGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0.0, Color3.fromRGB(0, 255, 200)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 120, 90)),
+	ColorSequenceKeypoint.new(1.0, Color3.fromRGB(0, 255, 200))
+})
+GlowGradient.Rotation = 0
+GlowGradient.Parent = GlowFrame
+
+local Scanline = Instance.new("Frame")
+Scanline.Name = "Scanline"
+Scanline.Size = UDim2.new(1, 0, 0, 1)
+Scanline.Position = UDim2.new(0, 0, 0, 0)
+Scanline.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
+Scanline.BackgroundTransparency = 0.7
+Scanline.BorderSizePixel = 0
+Scanline.ZIndex = 10
+Scanline.Parent = MainFrame
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Size = UDim2.new(1, 0, 0, 38)
+TitleBar.BackgroundColor3 = Color3.fromRGB(5, 5, 10)
+TitleBar.BackgroundTransparency = 0.08
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Name = "Title"
+TitleText.Size = UDim2.new(1, -40, 1, 0)
+TitleText.Position = UDim2.new(0, 10, 0, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "> 最坚强的战场脚本（tubers93脚本）"
+TitleText.TextColor3 = Color3.fromRGB(0, 255, 200)
+TitleText.TextSize = 13
+TitleText.Font = Enum.Font.Code
+TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Parent = TitleBar
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "Toggle"
+ToggleBtn.Size = UDim2.new(0, 32, 0, 32)
+ToggleBtn.Position = UDim2.new(1, -34, 0, 3)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 40, 30)
+ToggleBtn.BackgroundTransparency = 0.5
+ToggleBtn.BorderSizePixel = 0
+ToggleBtn.Text = "▼"
+ToggleBtn.TextColor3 = Color3.fromRGB(0, 255, 200)
+ToggleBtn.TextSize = 14
+ToggleBtn.Font = Enum.Font.Code
+ToggleBtn.Parent = TitleBar
+
+local Content = Instance.new("Frame")
+Content.Name = "Content"
+Content.Size = UDim2.new(1, 0, 1, -38)
+Content.Position = UDim2.new(0, 0, 0, 38)
+Content.BackgroundTransparency = 1
+Content.BorderSizePixel = 0
+Content.Parent = MainFrame
+
+local Sep1 = Instance.new("Frame")
+Sep1.Size = UDim2.new(1, -16, 0, 1)
+Sep1.Position = UDim2.new(0, 8, 0, 0)
+Sep1.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
+Sep1.BackgroundTransparency = 0.6
+Sep1.BorderSizePixel = 0
+Sep1.Parent = Content
+
+local ListLabel = Instance.new("TextLabel")
+ListLabel.Size = UDim2.new(1, -16, 0, 22)
+ListLabel.Position = UDim2.new(0, 8, 0, 8)
+ListLabel.BackgroundTransparency = 1
+ListLabel.Text = "[ 目标玩家列表 ]"
+ListLabel.TextColor3 = Color3.fromRGB(160, 160, 170)
+ListLabel.TextSize = 12
+ListLabel.Font = Enum.Font.Code
+ListLabel.TextXAlignment = Enum.TextXAlignment.Left
+ListLabel.Parent = Content
+
+local ListFrame = Instance.new("ScrollingFrame")
+ListFrame.Name = "PlayerList"
+ListFrame.Size = UDim2.new(1, -16, 0, 150)
+ListFrame.Position = UDim2.new(0, 8, 0, 32)
+ListFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
+ListFrame.BackgroundTransparency = 0.5
+ListFrame.BorderSizePixel = 0
+ListFrame.ScrollBarThickness = 2
+ListFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 200)
+ListFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ListFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ListFrame.Parent = Content
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Padding = UDim.new(0, 4)
+ListLayout.Parent = ListFrame
+
+local ListPad = Instance.new("UIPadding")
+ListPad.PaddingLeft = UDim.new(0, 6)
+ListPad.PaddingRight = UDim.new(0, 6)
+ListPad.PaddingTop = UDim.new(0, 6)
+ListPad.PaddingBottom = UDim.new(0, 6)
+ListPad.Parent = ListFrame
+
+local BtnFrame = Instance.new("Frame")
+BtnFrame.Size = UDim2.new(1, -16, 0, 182)
+BtnFrame.Position = UDim2.new(0, 8, 0, 192)
+BtnFrame.BackgroundTransparency = 1
+BtnFrame.Parent = Content
+
+local FrontFrame = Instance.new("Frame")
+FrontFrame.Size = UDim2.new(1, 0, 0, 20)
+FrontFrame.Position = UDim2.new(0, 0, 0, 0)
+FrontFrame.BackgroundTransparency = 1
+FrontFrame.Parent = BtnFrame
+
+local FrontLabel = Instance.new("TextLabel")
+FrontLabel.Size = UDim2.new(0, 60, 1, 0)
+FrontLabel.Position = UDim2.new(0, 0, 0, 0)
+FrontLabel.BackgroundTransparency = 1
+FrontLabel.Text = "传送前方"
+FrontLabel.TextColor3 = Color3.fromRGB(120, 120, 130)
+FrontLabel.TextSize = 11
+FrontLabel.Font = Enum.Font.Code
+FrontLabel.TextXAlignment = Enum.TextXAlignment.Left
+FrontLabel.Parent = FrontFrame
+
+local FrontToggle = Instance.new("TextButton")
+FrontToggle.Size = UDim2.new(0, 18, 0, 18)
+FrontToggle.Position = UDim2.new(0, 64, 0, 1)
+FrontToggle.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+FrontToggle.BorderSizePixel = 0
+FrontToggle.Text = ""
+FrontToggle.Font = Enum.Font.Code
+FrontToggle.Parent = FrontFrame
+
+FrontToggle.MouseButton1Click:Connect(function()
+	isFrontMode = not isFrontMode
+	if isFrontMode then
+		FrontToggle.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+	else
+		FrontToggle.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+	end
+end)
+
+local AntiFlingLabel = Instance.new("TextLabel")
+AntiFlingLabel.Size = UDim2.new(0, 60, 1, 0)
+AntiFlingLabel.Position = UDim2.new(0, 120, 0, 0)
+AntiFlingLabel.BackgroundTransparency = 1
+AntiFlingLabel.Text = "防甩飞"
+AntiFlingLabel.TextColor3 = Color3.fromRGB(120, 120, 130)
+AntiFlingLabel.TextSize = 11
+AntiFlingLabel.Font = Enum.Font.Code
+AntiFlingLabel.TextXAlignment = Enum.TextXAlignment.Left
+AntiFlingLabel.Parent = FrontFrame
+
+local AntiFlingToggle = Instance.new("TextButton")
+AntiFlingToggle.Size = UDim2.new(0, 18, 0, 18)
+AntiFlingToggle.Position = UDim2.new(0, 184, 0, 1)
+AntiFlingToggle.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+AntiFlingToggle.BorderSizePixel = 0
+AntiFlingToggle.Text = ""
+AntiFlingToggle.Font = Enum.Font.Code
+AntiFlingToggle.Parent = FrontFrame
+
+local function setCollision(enabled)
+	local char = LocalPlayer.Character
+	if char then
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = enabled
+			end
+		end
+	end
+end
+
+local function cleanupAntiFlingConstraints()
+	local char = LocalPlayer.Character
+	if char then
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			local bv = hrp:FindFirstChild("AntiFlingBV")
+			if bv then bv:Destroy() end
+			local bg = hrp:FindFirstChild("AntiFlingBG")
+			if bg then bg:Destroy() end
+		end
+	end
+end
+
+local function enableAntiFling()
+	if antiFlingHeartbeat then
+		antiFlingHeartbeat:Disconnect()
+		antiFlingHeartbeat = nil
+	end
+	if antiFlingHeartbeat2 then
+		antiFlingHeartbeat2:Disconnect()
+		antiFlingHeartbeat2 = nil
+	end
+	cleanupAntiFlingConstraints()
+	antiFlingEnabled = true
+	AntiFlingToggle.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+	setCollision(false)
+	antiFlingHeartbeat = RunService.Stepped:Connect(function(_, deltaTime)
+		if not antiFlingEnabled then return end
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local hum = char:FindFirstChild("Humanoid")
+		if not hrp or not hum then return end
+		if hum.PlatformStand then
+			hum.PlatformStand = false
+		end
+		local bv = hrp:FindFirstChild("AntiFlingBV")
+		if not bv then
+			bv = Instance.new("BodyVelocity")
+			bv.Name = "AntiFlingBV"
+			bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			bv.Velocity = Vector3.zero
+			bv.Parent = hrp
+		end
+		local bg = hrp:FindFirstChild("AntiFlingBG")
+		if not bg then
+			bg = Instance.new("BodyGyro")
+			bg.Name = "AntiFlingBG"
+			bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+			bg.CFrame = hrp.CFrame
+			bg.Parent = hrp
+		end
+		local moveDir = hum.MoveDirection
+		local targetVel = Vector3.zero
+		if moveDir.Magnitude > 0 then
+			targetVel = moveDir * hum.WalkSpeed
+		end
+		hrp.AssemblyLinearVelocity = targetVel
+		bv.Velocity = targetVel
+		bg.CFrame = hrp.CFrame
+	end)
+	antiFlingHeartbeat2 = RunService.Heartbeat:Connect(function()
+		if not antiFlingEnabled then return end
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local hum = char:FindFirstChild("Humanoid")
+		if not hrp or not hum then return end
+		local bv = hrp:FindFirstChild("AntiFlingBV")
+		if not bv then return end
+		local moveDir = hum.MoveDirection
+		local targetVel = Vector3.zero
+		if moveDir.Magnitude > 0 then
+			targetVel = moveDir * hum.WalkSpeed
+		end
+		hrp.AssemblyLinearVelocity = targetVel
+		bv.Velocity = targetVel
+	end)
+end
+
+local function disableAntiFling()
+	antiFlingEnabled = false
+	AntiFlingToggle.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+	if antiFlingHeartbeat then
+		antiFlingHeartbeat:Disconnect()
+		antiFlingHeartbeat = nil
+	end
+	if antiFlingHeartbeat2 then
+		antiFlingHeartbeat2:Disconnect()
+		antiFlingHeartbeat2 = nil
+	end
+	local char = LocalPlayer.Character
+	if char then
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			local bv = hrp:FindFirstChild("AntiFlingBV")
+			if bv then bv:Destroy() end
+			local bg = hrp:FindFirstChild("AntiFlingBG")
+			if bg then bg:Destroy() end
+		end
+		local hum = char:FindFirstChild("Humanoid")
+		if hum then
+			hum.PlatformStand = false
+		end
+	end
+	setCollision(true)
+end
+
+AntiFlingToggle.MouseButton1Click:Connect(function()
+	if antiFlingEnabled then
+		disableAntiFling()
+	else
+		enableAntiFling()
+	end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+	if antiFlingEnabled then
+		task.wait(0.3)
+		if antiFlingEnabled then
+			enableAntiFling()
+		end
+	end
+	char.DescendantAdded:Connect(function(descendant)
+		if antiFlingEnabled and descendant:IsA("BasePart") then
+			descendant.CanCollide = false
+		end
+	end)
+end)
+
+coroutine.wrap(function()
+	while true do
+		task.wait(2)
+		if antiFlingEnabled and not antiFlingHeartbeat then
+			enableAntiFling()
+		end
+	end
+end)()
+
+local TeleportBtn = Instance.new("TextButton")
+TeleportBtn.Name = "TeleportBtn"
+TeleportBtn.Size = UDim2.new(1, 0, 0, 38)
+TeleportBtn.Position = UDim2.new(0, 0, 0, 24)
+TeleportBtn.BackgroundColor3 = Color3.fromRGB(0, 60, 45)
+TeleportBtn.BackgroundTransparency = 0.15
+TeleportBtn.BorderSizePixel = 0
+TeleportBtn.Text = "传送"
+TeleportBtn.TextColor3 = Color3.fromRGB(0, 255, 200)
+TeleportBtn.TextSize = 13
+TeleportBtn.Font = Enum.Font.Code
+TeleportBtn.Parent = BtnFrame
+
+local ReturnBtn = Instance.new("TextButton")
+ReturnBtn.Name = "ReturnBtn"
+ReturnBtn.Size = UDim2.new(1, 0, 0, 38)
+ReturnBtn.Position = UDim2.new(0, 0, 0, 64)
+ReturnBtn.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+ReturnBtn.BackgroundTransparency = 0.15
+ReturnBtn.BorderSizePixel = 0
+ReturnBtn.Text = "停止传送并返回原位"
+ReturnBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+ReturnBtn.TextSize = 12
+ReturnBtn.Font = Enum.Font.Code
+ReturnBtn.Parent = BtnFrame
+
+local FlingBtn = Instance.new("TextButton")
+FlingBtn.Name = "FlingBtn"
+FlingBtn.Size = UDim2.new(1, 0, 0, 38)
+FlingBtn.Position = UDim2.new(0, 0, 0, 104)
+FlingBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 0)
+FlingBtn.BackgroundTransparency = 0.15
+FlingBtn.BorderSizePixel = 0
+FlingBtn.Text = "插入碰撞甩飞"
+FlingBtn.TextColor3 = Color3.fromRGB(255, 230, 0)
+FlingBtn.TextSize = 13
+FlingBtn.Font = Enum.Font.Code
+FlingBtn.Parent = BtnFrame
+
+local AntiSaitamaBtn = Instance.new("TextButton")
+AntiSaitamaBtn.Name = "AntiSaitamaBtn"
+AntiSaitamaBtn.Size = UDim2.new(1, 0, 0, 38)
+AntiSaitamaBtn.Position = UDim2.new(0, 0, 0, 144)
+AntiSaitamaBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 150)
+AntiSaitamaBtn.BackgroundTransparency = 0.15
+AntiSaitamaBtn.BorderSizePixel = 0
+AntiSaitamaBtn.Text = "反琦玉死亡计时器"
+AntiSaitamaBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+AntiSaitamaBtn.TextSize = 12
+AntiSaitamaBtn.Font = Enum.Font.Code
+AntiSaitamaBtn.Parent = BtnFrame
+
+local ScaleFrame = Instance.new("Frame")
+ScaleFrame.Size = UDim2.new(1, -16, 0, 28)
+ScaleFrame.Position = UDim2.new(0, 8, 0, 394)
+ScaleFrame.BackgroundTransparency = 1
+ScaleFrame.Parent = Content
+
+local ScaleLabel = Instance.new("TextLabel")
+ScaleLabel.Size = UDim2.new(0, 50, 1, 0)
+ScaleLabel.BackgroundTransparency = 1
+ScaleLabel.Text = "SCALE:"
+ScaleLabel.TextColor3 = Color3.fromRGB(120, 120, 130)
+ScaleLabel.TextSize = 11
+ScaleLabel.Font = Enum.Font.Code
+ScaleLabel.TextXAlignment = Enum.TextXAlignment.Left
+ScaleLabel.Parent = ScaleFrame
+
+local ScaleMinus = Instance.new("TextButton")
+ScaleMinus.Size = UDim2.new(0, 32, 1, 0)
+ScaleMinus.Position = UDim2.new(0, 55, 0, 0)
+ScaleMinus.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+ScaleMinus.BorderSizePixel = 0
+ScaleMinus.Text = "-"
+ScaleMinus.TextColor3 = Color3.fromRGB(0, 255, 200)
+ScaleMinus.TextSize = 16
+ScaleMinus.Font = Enum.Font.Code
+ScaleMinus.Parent = ScaleFrame
+
+local ScaleValue = Instance.new("TextLabel")
+ScaleValue.Size = UDim2.new(0, 50, 1, 0)
+ScaleValue.Position = UDim2.new(0, 92, 0, 0)
+ScaleValue.BackgroundTransparency = 1
+ScaleValue.Text = "70%"
+ScaleValue.TextColor3 = Color3.fromRGB(0, 255, 200)
+ScaleValue.TextSize = 12
+ScaleValue.Font = Enum.Font.Code
+ScaleValue.TextXAlignment = Enum.TextXAlignment.Center
+ScaleValue.Parent = ScaleFrame
+
+local ScalePlus = Instance.new("TextButton")
+ScalePlus.Size = UDim2.new(0, 32, 1, 0)
+ScalePlus.Position = UDim2.new(0, 146, 0, 0)
+ScalePlus.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+ScalePlus.BorderSizePixel = 0
+ScalePlus.Text = "+"
+ScalePlus.TextColor3 = Color3.fromRGB(0, 255, 200)
+ScalePlus.TextSize = 16
+ScalePlus.Font = Enum.Font.Code
+ScalePlus.Parent = ScaleFrame
+
+local RejoinBtn = Instance.new("TextButton")
+RejoinBtn.Name = "RejoinBtn"
+RejoinBtn.Size = UDim2.new(1, -16, 0, 36)
+RejoinBtn.Position = UDim2.new(0, 8, 0, 430)
+RejoinBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+RejoinBtn.BackgroundTransparency = 0.15
+RejoinBtn.BorderSizePixel = 0
+RejoinBtn.Text = "重新加入当前服务器"
+RejoinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+RejoinBtn.TextSize = 12
+RejoinBtn.Font = Enum.Font.Code
+RejoinBtn.Parent = Content
+
+local StatusBar = Instance.new("Frame")
+StatusBar.Size = UDim2.new(1, 0, 0, 24)
+StatusBar.Position = UDim2.new(0, 0, 1, -24)
+StatusBar.BackgroundColor3 = Color3.fromRGB(5, 5, 10)
+StatusBar.BackgroundTransparency = 0.2
+StatusBar.BorderSizePixel = 0
+StatusBar.Parent = Content
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, -10, 1, 0)
+StatusLabel.Position = UDim2.new(0, 5, 0, 0)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "系统就绪 | 等待目标选择..."
+StatusLabel.TextColor3 = Color3.fromRGB(100, 100, 110)
+StatusLabel.TextSize = 11
+StatusLabel.Font = Enum.Font.Code
+StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
+StatusLabel.Parent = StatusBar
+
+local function animateGlow()
+	local tween = TweenService:Create(GlowGradient, TweenInfo.new(4, Enum.EasingStyle.Linear), {Rotation = 360})
+	tween:Play()
+	tween.Completed:Connect(function()
+		GlowGradient.Rotation = 0
+		animateGlow()
+	end)
+end
+animateGlow()
+
+local function animateScanline()
+	local tween = TweenService:Create(Scanline, TweenInfo.new(2.5, Enum.EasingStyle.Linear), {Position = UDim2.new(0, 0, 1, 0)})
+	tween:Play()
+	tween.Completed:Connect(function()
+		Scanline.Position = UDim2.new(0, 0, 0, 0)
+		Scanline.BackgroundTransparency = 0.9
+		TweenService:Create(Scanline, TweenInfo.new(0.3), {BackgroundTransparency = 0.5}):Play()
+		animateScanline()
+	end)
+end
+animateScanline()
+
+local function setupHover(btn, normalColor, hoverColor, textNormal, textHover)
+	btn.MouseEnter:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
+		if textHover then TweenService:Create(btn, TweenInfo.new(0.15), {TextColor3 = textHover}):Play() end
+	end)
+	btn.MouseLeave:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = normalColor}):Play()
+		if textNormal then TweenService:Create(btn, TweenInfo.new(0.15), {TextColor3 = textNormal}):Play() end
+	end)
+end
+setupHover(TeleportBtn, Color3.fromRGB(0, 60, 45), Color3.fromRGB(0, 90, 70), Color3.fromRGB(0, 255, 200), nil)
+setupHover(ReturnBtn, Color3.fromRGB(60, 20, 20), Color3.fromRGB(90, 30, 30), Color3.fromRGB(255, 80, 80), nil)
+setupHover(FlingBtn, Color3.fromRGB(60, 60, 0), Color3.fromRGB(90, 90, 0), Color3.fromRGB(255, 230, 0), nil)
+setupHover(ScaleMinus, Color3.fromRGB(20, 20, 30), Color3.fromRGB(40, 40, 55), nil, nil)
+setupHover(ScalePlus, Color3.fromRGB(20, 20, 30), Color3.fromRGB(40, 40, 55), nil, nil)
+setupHover(AntiSaitamaBtn, Color3.fromRGB(100, 0, 150), Color3.fromRGB(140, 0, 200), Color3.fromRGB(255, 255, 255), nil)
+setupHover(RejoinBtn, Color3.fromRGB(0, 100, 200), Color3.fromRGB(0, 130, 240), Color3.fromRGB(255, 255, 255), nil)
+
+local function updatePlayerList()
+	for _, child in pairs(ListFrame:GetChildren()) do
+		if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
+	end
+	local count = 0
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			count += 1
+			local btn = Instance.new("TextButton")
+			btn.Name = player.Name
+			btn.Size = UDim2.new(1, 0, 0, 32)
+			btn.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+			btn.BackgroundTransparency = 0.4
+			btn.BorderSizePixel = 0
+			btn.Text = "  " .. player.DisplayName .. "  [" .. player.Name .. "]"
+			btn.TextColor3 = Color3.fromRGB(180, 180, 190)
+			btn.TextSize = 12
+			btn.Font = Enum.Font.Code
+			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.Parent = ListFrame
+			btn.MouseButton1Click:Connect(function()
+				selectedPlayer = player
+				for _, other in pairs(ListFrame:GetChildren()) do
+					if other:IsA("TextButton") then
+						other.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+						other.TextColor3 = Color3.fromRGB(180, 180, 190)
+					end
+				end
+				btn.BackgroundColor3 = Color3.fromRGB(0, 70, 55)
+				btn.TextColor3 = Color3.fromRGB(0, 255, 200)
+				StatusLabel.Text = "已锁定目标: " .. player.DisplayName
+				StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+			end)
+		end
+	end
+	if count == 0 then
+		local empty = Instance.new("TextLabel")
+		empty.Size = UDim2.new(1, 0, 0, 32)
+		empty.BackgroundTransparency = 1
+		empty.Text = "  [ 无其他玩家 ]"
+		empty.TextColor3 = Color3.fromRGB(80, 80, 90)
+		empty.TextSize = 12
+		empty.Font = Enum.Font.Code
+		empty.TextXAlignment = Enum.TextXAlignment.Left
+		empty.Parent = ListFrame
+	end
+end
+Players.PlayerAdded:Connect(updatePlayerList)
+Players.PlayerRemoving:Connect(function(plr)
+	if selectedPlayer == plr then
+		selectedPlayer = nil
+		if isTeleporting then stopTeleport() end
+		if isFlinging then stopFling() end
+		StatusLabel.Text = "目标玩家已断开连接"
+		StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+	end
+	updatePlayerList()
+end)
+
+function startTeleport()
+	if not selectedPlayer then
+		StatusLabel.Text = "错误: 未选择目标玩家"
+		StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		return
+	end
+	if isFlinging then stopFling() end
+	local target = selectedPlayer
+	local localChar = LocalPlayer.Character
+	if not localChar then return end
+	local localHRP = localChar:FindFirstChild("HumanoidRootPart")
+	if not localHRP then return end
+	lastPosition = localHRP.CFrame
+	isTeleporting = true
+	TeleportBtn.Text = "停止"
+	TeleportBtn.BackgroundColor3 = Color3.fromRGB(80, 60, 0)
+	StatusLabel.Text = "正在循环传送 -> " .. target.DisplayName
+	StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+	teleportConnection = RunService.Heartbeat:Connect(function()
+		if not isTeleporting then return end
+		if not target or not target.Parent then
+			stopTeleport()
+			StatusLabel.Text = "目标丢失，传送终止"
+			StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+			selectedPlayer = nil
+			return
+		end
+		local targetChar = target.Character
+		if not targetChar then return end
+		local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+		if not targetHRP then return end
+		local myChar = LocalPlayer.Character
+		if not myChar then stopTeleport(); return end
+		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+		if not myHRP then stopTeleport(); return end
+
+		if isFrontMode then
+			local frontCFrame = CFrame.lookAt(
+				targetHRP.Position + targetHRP.CFrame.LookVector * 4.5,
+				targetHRP.Position
+			)
+			myHRP.CFrame = frontCFrame
+		else
+			local behindCFrame = CFrame.lookAt(
+				targetHRP.Position - targetHRP.CFrame.LookVector * 4.5,
+				targetHRP.Position
+			)
+			myHRP.CFrame = behindCFrame
+		end
+	end)
+end
+
+function stopTeleport()
+	isTeleporting = false
+	if teleportConnection then teleportConnection:Disconnect(); teleportConnection = nil end
+	TeleportBtn.Text = "传送"
+	TeleportBtn.BackgroundColor3 = Color3.fromRGB(0, 60, 45)
+	StatusLabel.Text = "传送已停止"
+	StatusLabel.TextColor3 = Color3.fromRGB(160, 160, 170)
+end
+
+function startFling()
+	if not selectedPlayer then
+		StatusLabel.Text = "错误: 未选择目标玩家"
+		StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		return
+	end
+	if isTeleporting then stopTeleport() end
+	local target = selectedPlayer
+	local localChar = LocalPlayer.Character
+	if not localChar then return end
+	local localHRP = localChar:FindFirstChild("HumanoidRootPart")
+	if not localHRP then return end
+	lastPosition = localHRP.CFrame
+	local hum = localChar:FindFirstChild("Humanoid")
+	if hum then
+		hum.AutoRotate = false
+		hum.PlatformStand = true
+	end
+	isFlinging = true
+	FlingBtn.Text = "停止甩飞"
+	FlingBtn.BackgroundColor3 = Color3.fromRGB(90, 90, 0)
+	StatusLabel.Text = "正在甩飞 -> " .. target.DisplayName
+	StatusLabel.TextColor3 = Color3.fromRGB(255, 230, 0)
+
+	local bv = Instance.new("BodyVelocity")
+	bv.MaxForce = Vector3.new(1, 1, 1) * 1e7
+	bv.Velocity = Vector3.zero
+	bv.Parent = localHRP
+
+	flingConnection = RunService.Heartbeat:Connect(function()
+		if not isFlinging then return end
+		local myChar = LocalPlayer.Character
+		if not myChar then return end
+		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+		if not myHRP then return end
+		local targetChar = target and target.Character
+		if not targetChar then
+			stopFling()
+			StatusLabel.Text = "目标丢失，甩飞终止"
+			StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+			return
+		end
+		local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+		if not targetHRP then return end
+
+		myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0.2, 0)
+		myHRP.AssemblyLinearVelocity = Vector3.new(0, 5000, 0) + (targetHRP.CFrame.LookVector * 3000)
+		bv.Velocity = myHRP.AssemblyLinearVelocity
+
+		for _, partName in ipairs({"Head", "UpperTorso", "Torso"}) do
+			local part = myChar:FindFirstChild(partName)
+			if part and part:IsA("BasePart") then
+				part.CFrame = targetHRP.CFrame
+				part.AssemblyLinearVelocity = myHRP.AssemblyLinearVelocity
+			end
+		end
+		task.wait(0.05)
+		bv.Velocity = myHRP.AssemblyLinearVelocity
+	end)
+end
+
+function stopFling()
+	isFlinging = false
+	if flingConnection then flingConnection:Disconnect(); flingConnection = nil end
+	local myChar = LocalPlayer.Character
+	if myChar then
+		for _, v in ipairs(myChar:GetDescendants()) do
+			if v:IsA("BodyVelocity") then v:Destroy() end
+		end
+		for _, partName in ipairs({"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart", "Torso"}) do
+			local part = myChar:FindFirstChild(partName)
+			if part and part:IsA("BasePart") then
+				part.AssemblyLinearVelocity = Vector3.zero
+				part.AssemblyAngularVelocity = Vector3.zero
+			end
+		end
+		local hum = myChar:FindFirstChild("Humanoid")
+		if hum then
+			hum.AutoRotate = true
+			hum.PlatformStand = false
+		end
+	end
+	FlingBtn.Text = "插入碰撞甩飞"
+	FlingBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 0)
+	StatusLabel.Text = "甩飞已停止"
+	StatusLabel.TextColor3 = Color3.fromRGB(160, 160, 170)
+end
+
+local function stopAndReturn()
+	if not isTeleporting and not isFlinging and not antiSaitamaLooping then
+		StatusLabel.Text = "无效操作: 当前未在传送或甩飞状态"
+		StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		return
+	end
+	if isTeleporting then stopTeleport() end
+	if isFlinging then stopFling() end
+	if antiSaitamaLooping then stopAntiSaitamaLoop() end
+	local myChar = LocalPlayer.Character
+	if myChar and lastPosition then
+		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+		if myHRP then
+			myHRP.CFrame = lastPosition
+			myHRP.AssemblyLinearVelocity = Vector3.zero
+			StatusLabel.Text = "已停止并返回原位"
+			StatusLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+		end
+	end
+	lastPosition = nil
+end
+
+TeleportBtn.MouseButton1Click:Connect(function()
+	if isTeleporting then stopTeleport() else startTeleport() end
+end)
+ReturnBtn.MouseButton1Click:Connect(stopAndReturn)
+FlingBtn.MouseButton1Click:Connect(function()
+	if isFlinging then stopFling() else startFling() end
+end)
+local function startAntiSaitamaLoop()
+	if isTeleporting then stopTeleport() end
+	if isFlinging then stopFling() end
+	antiSaitamaLooping = true
+	AntiSaitamaBtn.Text = "停止反琦玉计时器"
+	AntiSaitamaBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+	StatusLabel.Text = "反琦玉计时器循环传送中..."
+	StatusLabel.TextColor3 = Color3.fromRGB(180, 130, 255)
+	antiSaitamaConnection = RunService.Heartbeat:Connect(function()
+		if not antiSaitamaLooping then return end
+		local char = LocalPlayer.Character
+		if not char then return end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if not hrp then return end
+		hrp.CFrame = CFrame.new(80.70, -500.86, -1333.31)
+		for _, partName in ipairs({"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart", "Torso"}) do
+			local part = char:FindFirstChild(partName)
+			if part and part:IsA("BasePart") then
+				part.AssemblyLinearVelocity = Vector3.zero
+				part.AssemblyAngularVelocity = Vector3.zero
+			end
+		end
+	end)
+end
+
+local function stopAntiSaitamaLoop()
+	antiSaitamaLooping = false
+	if antiSaitamaConnection then
+		antiSaitamaConnection:Disconnect()
+		antiSaitamaConnection = nil
+	end
+	AntiSaitamaBtn.Text = "反琦玉死亡计时器"
+	AntiSaitamaBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 150)
+	StatusLabel.Text = "反琦玉计时器已停止"
+	StatusLabel.TextColor3 = Color3.fromRGB(160, 160, 170)
+end
+
+AntiSaitamaBtn.MouseButton1Click:Connect(function()
+	if antiSaitamaLooping then
+		stopAntiSaitamaLoop()
+	else
+		startAntiSaitamaLoop()
+	end
+end)
+
+RejoinBtn.MouseButton1Click:Connect(function()
+	if isTeleporting then stopTeleport() end
+	if isFlinging then stopFling() end
+	if antiSaitamaLooping then stopAntiSaitamaLoop() end
+	StatusLabel.Text = "正在重新加入服务器..."
+	StatusLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+	TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId)
+end)
+
+local function toggleUI()
+	isOpen = not isOpen
+	if isOpen then
+		Content.Visible = true
+		MainFrame.Size = UDim2.new(0, 290, 0, 540)
+		ToggleBtn.Text = "▼"
+		GlowFrame.Visible = true
+	else
+		Content.Visible = false
+		MainFrame.Size = UDim2.new(0, 290, 0, 38)
+		ToggleBtn.Text = "▲"
+		GlowFrame.Visible = false
+	end
+end
+ToggleBtn.MouseButton1Click:Connect(toggleUI)
+
+local dragStart = nil
+local frameStart = nil
+local isDragging = false
+TitleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		isDragging = false
+		dragStart = input.Position
+		frameStart = MainFrame.Position
+		local conn
+		conn = input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				conn:Disconnect()
+				if not isDragging then toggleUI() end
+				dragStart = nil
+			end
+		end)
+	end
+end)
+TitleBar.InputChanged:Connect(function(input)
+	if dragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		if delta.Magnitude > 4 then isDragging = true end
+		if isDragging then
+			MainFrame.Position = UDim2.new(
+				frameStart.X.Scale, frameStart.X.Offset + delta.X,
+				frameStart.Y.Scale, frameStart.Y.Offset + delta.Y
+			)
+		end
+	end
+end)
+
+local function updateScale(delta)
+	currentScale = math.clamp(currentScale + delta, 0.6, 1.3)
+	UIScale.Scale = currentScale
+	ScaleValue.Text = math.floor(currentScale * 100) .. "%"
+end
+ScaleMinus.MouseButton1Click:Connect(function() updateScale(-0.1) end)
+ScalePlus.MouseButton1Click:Connect(function() updateScale(0.1) end)
+
+updatePlayerList()
+StatusLabel.Text = "系统就绪 | 玩家数: " .. tostring(#Players:GetPlayers() - 1)
