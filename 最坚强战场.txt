@@ -605,9 +605,11 @@ Players.PlayerRemoving:Connect(function(plr)
 	updatePlayerList()
 end)
 
--- ==================== 传送硬锁定核心修改 ====================
--- 原理：BodyPosition + BodyGyro 是物理引擎级别的约束，服务器会同步给所有客户端
--- 单纯改 CFrame 只有本地生效，别人看你还是漂移的
+-- ==================== 传送瞬移+纯CFrame刚性锁定（无约束器，完全焊死）====================
+
+local function cleanupTeleportConstraints()
+	-- 此函数原本用于清理BodyPosition/BodyGyro，现已不需要，保留为空
+end
 
 function startTeleport()
 	if not selectedPlayer then
@@ -623,54 +625,70 @@ function startTeleport()
 	local localHRP = localChar:FindFirstChild("HumanoidRootPart")
 	if not localHRP then return end
 
+	-- 保存原位
 	lastPosition = localHRP.CFrame
 	isTeleporting = true
 	TeleportBtn.Text = "停止"
 	TeleportBtn.BackgroundColor3 = Color3.fromRGB(80, 60, 0)
-	StatusLabel.Text = "正在硬锁定 -> " .. target.DisplayName
+	StatusLabel.Text = "正在绝对锁定 -> " .. target.DisplayName
 	StatusLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
 
-	-- 清理防甩飞约束，避免和传送约束冲突
+	-- 清理防甩飞约束，避免冲突
 	cleanupAntiFlingConstraints()
+	cleanupTeleportConstraints()
 
-	-- 清理旧的传送约束
-	local oldBP = localHRP:FindFirstChild("TeleportBP")
-	if oldBP then oldBP:Destroy() end
-	local oldBG = localHRP:FindFirstChild("TeleportBG")
-	if oldBG then oldBG:Destroy() end
+	-- 等待目标角色就绪
+	local targetChar = target.Character
+	if not targetChar then
+		StatusLabel.Text = "目标角色未加载"
+		StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		isTeleporting = false
+		return
+	end
+	local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+	if not targetHRP then
+		StatusLabel.Text = "目标HRP未加载"
+		StatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
+		isTeleporting = false
+		return
+	end
 
-	-- 【核心】创建 BodyPosition：把角色物理位置焊死在目标点
-	local bp = Instance.new("BodyPosition")
-	bp.Name = "TeleportBP"
-	bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	bp.P = 9e5          -- 比例系数，越大越硬
-	bp.D = 5e5          -- 阻尼系数，防止抖动
-	bp.Position = localHRP.Position
-	bp.Parent = localHRP
+	-- 计算初始锁定点
+	local targetCF
+	if isFrontMode then
+		targetCF = CFrame.lookAt(
+			targetHRP.Position + targetHRP.CFrame.LookVector * 4.5,
+			targetHRP.Position
+		)
+	else
+		targetCF = CFrame.lookAt(
+			targetHRP.Position - targetHRP.CFrame.LookVector * 4.5,
+			targetHRP.Position
+		)
+	end
 
-	-- 【核心】创建 BodyGyro：把角色朝向焊死
-	local bg = Instance.new("BodyGyro")
-	bg.Name = "TeleportBG"
-	bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	bg.P = 9e5
-	bg.D = 5e5
-	bg.CFrame = localHRP.CFrame
-	bg.Parent = localHRP
+	-- 一键瞬移到位（无过程）
+	localHRP.CFrame = targetCF
+	localHRP.AssemblyLinearVelocity = Vector3.zero
+	localHRP.AssemblyAngularVelocity = Vector3.zero
+	localHRP.RotVelocity = Vector3.zero
 
 	-- 禁用碰撞，防止被目标/环境推开
 	for _, part in ipairs(localChar:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CanCollide = false
+			part.Massless = true      -- 质量归零，确保物理模拟不会干扰
 		end
 	end
 
-	-- 禁用 Humanoid 自动旋转和站立状态，防止动画系统干扰朝向
+	-- 禁用Humanoid的自动旋转和站姿，防止动画干扰朝向
 	local hum = localChar:FindFirstChild("Humanoid")
 	if hum then
 		hum.AutoRotate = false
 		hum.PlatformStand = true
 	end
 
+	-- Heartbeat每帧纯CFrame锁定（无BodyPosition/BodyGyro）
 	teleportConnection = RunService.Heartbeat:Connect(function()
 		if not isTeleporting then return end
 		if not target or not target.Parent then
@@ -682,41 +700,40 @@ function startTeleport()
 		end
 
 		local targetChar = target.Character
-		if not targetChar then return end
+		if not targetChar then stopTeleport(); return end
 		local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
-		if not targetHRP then return end
+		if not targetHRP then stopTeleport(); return end
 
 		local myChar = LocalPlayer.Character
 		if not myChar then stopTeleport(); return end
 		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
 		if not myHRP then stopTeleport(); return end
 
-		-- 计算目标坐标（背后或前方）
-		local targetCF
+		-- 实时计算跟随位置
+		local newTargetCF
 		if isFrontMode then
-			targetCF = CFrame.lookAt(
+			newTargetCF = CFrame.lookAt(
 				targetHRP.Position + targetHRP.CFrame.LookVector * 4.5,
 				targetHRP.Position
 			)
 		else
-			targetCF = CFrame.lookAt(
+			newTargetCF = CFrame.lookAt(
 				targetHRP.Position - targetHRP.CFrame.LookVector * 4.5,
 				targetHRP.Position
 			)
 		end
 
-		-- 【硬锁定】每帧把物理约束目标点更新到目标身后/身前
-		bp.Position = targetCF.Position
-		bg.CFrame = targetCF
+		-- 仅用CFrame强制覆盖，服务器因为网络所有权会完全接受
+		myHRP.CFrame = newTargetCF
 
-		-- 双重保险：直接覆盖 CFrame + 清零所有速度
-		myHRP.CFrame = targetCF
+		-- 清零所有可能产生漂移的速度
 		myHRP.AssemblyLinearVelocity = Vector3.zero
 		myHRP.AssemblyAngularVelocity = Vector3.zero
 		myHRP.RotVelocity = Vector3.zero
 
-		-- 同步冻结身体其他部位，防止肢体甩动暴露位置
-		for _, partName in ipairs({"Head", "UpperTorso", "LowerTorso", "Torso", "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"}) do
+		-- 冻结其他主要身体部件（防止四肢自己甩动影响视觉）
+		for _, partName in ipairs({"Head", "UpperTorso", "LowerTorso", "Torso",
+								   "LeftUpperArm", "RightUpperArm", "LeftUpperLeg", "RightUpperLeg"}) do
 			local part = myChar:FindFirstChild(partName)
 			if part and part:IsA("BasePart") then
 				part.AssemblyLinearVelocity = Vector3.zero
@@ -735,14 +752,18 @@ function stopTeleport()
 	StatusLabel.Text = "传送已停止"
 	StatusLabel.TextColor3 = Color3.fromRGB(160, 160, 170)
 
+	cleanupTeleportConstraints()
+
 	local myChar = LocalPlayer.Character
 	if myChar then
 		local myHRP = myChar:FindFirstChild("HumanoidRootPart")
 		if myHRP then
-			local bp = myHRP:FindFirstChild("TeleportBP")
-			if bp then bp:Destroy() end
-			local bg = myHRP:FindFirstChild("TeleportBG")
-			if bg then bg:Destroy() end
+			-- 确保没有任何残留约束器（可能之前其他功能留下的）
+			for _, obj in ipairs(myHRP:GetChildren()) do
+				if obj:IsA("BodyPosition") or obj:IsA("BodyGyro") then
+					obj:Destroy()
+				end
+			end
 		end
 
 		local hum = myChar:FindFirstChild("Humanoid")
@@ -751,15 +772,16 @@ function stopTeleport()
 			hum.PlatformStand = false
 		end
 
-		-- 恢复碰撞
+		-- 恢复碰撞和质量
 		for _, part in ipairs(myChar:GetDescendants()) do
 			if part:IsA("BasePart") then
 				part.CanCollide = true
+				part.Massless = false
 			end
 		end
 	end
 end
--- ==================== 传送硬锁定核心修改结束 ====================
+-- ==================== 传送核心修改结束 ====================
 
 function startFling()
 	if not selectedPlayer then
