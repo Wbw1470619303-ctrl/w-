@@ -1,0 +1,90 @@
+--拿我源码死全家
+--删掉这句话死全家
+local LEG_MESH_ID = "101851696"
+local LEG_TEXTURE_ID = "101851254"
+
+while true do
+    local ply = game.Players.LocalPlayer
+    local chr = ply.Character
+    if not chr then break end
+
+    local head = chr:FindFirstChild("Head")
+    if head then
+        head.Transparency = 1
+        for _, obj in ipairs(head:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("Decal") then
+                obj.Transparency = 1
+            end
+        end
+    end
+
+    for _, obj in ipairs(chr:GetChildren()) do
+        if obj:IsA("Accessory") then
+            local handle = obj:FindFirstChild("Handle")
+            if handle and handle:IsA("BasePart") then
+                handle.Transparency = 1
+            end
+        end
+    end
+
+    local humanoid = chr:FindFirstChildWhichIsA("Humanoid")
+    if humanoid then
+        if humanoid.RigType == Enum.HumanoidRigType.R6 then
+            local rightLeg = chr:FindFirstChild("Right Leg")
+            if rightLeg and rightLeg:IsA("BasePart") then
+                for _, child in ipairs(rightLeg:GetChildren()) do
+                    if child:IsA("SpecialMesh") or child:IsA("SurfaceAppearance") or child:IsA("FileMesh") then
+                        child:Destroy()
+                    end
+                end
+
+                local success, err = pcall(function()
+                    if rightLeg:IsA("MeshPart") then
+                        rightLeg.MeshId = "rbxassetid://" .. LEG_MESH_ID
+                        rightLeg.TextureID = "rbxassetid://" .. LEG_TEXTURE_ID
+                    else
+                        local legMesh = Instance.new("SpecialMesh")
+                        legMesh.MeshType = Enum.MeshType.FileMesh
+                        legMesh.MeshId = "rbxassetid://" .. LEG_MESH_ID
+                        legMesh.TextureId = "rbxassetid://" .. LEG_TEXTURE_ID
+                        legMesh.Scale = Vector3.new(1, 1, 1)
+                        legMesh.Parent = rightLeg
+                    end
+                    rightLeg.Transparency = 0
+                    rightLeg.BrickColor = BrickColor.new("Really black")
+                    rightLeg.Material = Enum.Material.Plastic
+                end)
+                if not success then
+                    warn("右腿网格替换失败: " .. tostring(err))
+                end
+            end
+
+        elseif humanoid.RigType == Enum.HumanoidRigType.R15 then
+            local rightLowerLeg = chr:FindFirstChild("RightLowerLeg")
+            if rightLowerLeg and rightLowerLeg:IsA("MeshPart") then
+                pcall(function()
+                    rightLowerLeg.MeshId = "rbxassetid://902942093"
+                    rightLowerLeg.Transparency = 1
+                end)
+            end
+
+            local rightUpperLeg = chr:FindFirstChild("RightUpperLeg")
+            if rightUpperLeg and rightUpperLeg:IsA("MeshPart") then
+                pcall(function()
+                    rightUpperLeg.MeshId = "rbxassetid://902942096"
+                    rightUpperLeg.TextureID = "rbxassetid://902843398"
+                end)
+            end
+
+            local rightFoot = chr:FindFirstChild("RightFoot")
+            if rightFoot and rightFoot:IsA("MeshPart") then
+                pcall(function()
+                    rightFoot.MeshId = "rbxassetid://902942089"
+                    rightFoot.Transparency = 1
+                end)
+            end
+        end
+    end
+
+    wait(1)
+end
