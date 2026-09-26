@@ -1,0 +1,3125 @@
+-- =====================================================================
+-- 动物医院 HUB（WX HUB 彩虹皮肤版）
+-- UI：WindUI 彩虹主题（同款冰冷的黄昏） | 功能：动物医院全套自动化
+-- =====================================================================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local WindUI = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+))()
+
+-- ===== 彩虹色系 =====
+local MarketplaceService = game:GetService("MarketplaceService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+local function getPlaceName()
+    local ok, info = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+    return (ok and info and info.Name) or game.Name
+end
+local placeName = getPlaceName()
+
+-- ===== HSV → RGB 工具函数 =====
+local function hsvToRgb(h, s, v)
+    local r, g, b
+    local i = math.floor(h / 60) % 6
+    local f = (h / 60) - math.floor(h / 60)
+    local p = v * (1 - s)
+    local q = v * (1 - f * s)
+    local t = v * (1 - (1 - f) * s)
+    if i == 0 then
+        r, g, b = v, t, p
+    elseif i == 1 then
+        r, g, b = q, v, p
+    elseif i == 2 then
+        r, g, b = p, v, t
+    elseif i == 3 then
+        r, g, b = p, q, v
+    elseif i == 4 then
+        r, g, b = t, p, v
+    else
+        r, g, b = v, p, q
+    end
+    return Color3.new(r, g, b)
+end
+
+local function makeRainbowColor(timeOffset, saturation, value)
+    saturation = saturation or 1
+    value = value or 1
+    local speed = 60
+    local hue = (tick() * speed + (timeOffset or 0)) % 360
+    return hsvToRgb(hue, saturation, value)
+end
+
+local function makeRainbowColorSequence(timeOffset, saturation, value, count)
+    saturation = saturation or 1
+    value = value or 1
+    count = count or 6
+    local speed = 60
+    local hueOffset = (tick() * speed + (timeOffset or 0)) % 360
+    local keypoints = {}
+    for i = 0, count - 1 do
+        local hue = (hueOffset + (i / count) * 360) % 360
+        local c = hsvToRgb(hue, saturation, value)
+        local t = i / (count - 1)
+        keypoints[i + 1] = ColorSequenceKeypoint.new(t, c)
+    end
+    return ColorSequence.new(keypoints)
+end
+
+function gradient3(text, color1, color2, color3)
+    local result = ""
+    local chars = {}
+    for uchar in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+        table.insert(chars, uchar)
+    end
+    local length = #chars
+    for i = 1, length do
+        local t = (i - 1) / math.max(length - 1, 1)
+        local r, g, b
+        if t < 0.5 then
+            local s = t * 2
+            r = color1.R + (color2.R - color1.R) * s
+            g = color1.G + (color2.G - color1.G) * s
+            b = color1.B + (color2.B - color1.B) * s
+        else
+            local s = (t - 0.5) * 2
+            r = color2.R + (color3.R - color2.R) * s
+            g = color2.G + (color3.G - color2.G) * s
+            b = color2.B + (color3.B - color2.B) * s
+        end
+        result = result .. string.format('<font color="rgb(%d,%d,%d)">%s</font>',
+            math.floor(r * 255), math.floor(g * 255), math.floor(b * 255), chars[i])
+    end
+    return result
+end
+
+-- 彩虹色标题
+local titleColor1 = hsvToRgb(0, 1, 1)
+local titleColor2 = hsvToRgb(120, 1, 1)
+local titleColor3 = hsvToRgb(240, 1, 1)
+
+local Window = WindUI:CreateWindow({
+    Title = gradient3("WX HUB", titleColor1, titleColor2, titleColor3),
+    Author = gradient3("动物医院 | 持续更新", titleColor3, titleColor1, titleColor2),
+    Icon = "wind",
+    IconThemed = false,
+    Folder = "AnimalHospitalHUB",
+    Size = UDim2.fromOffset(580, 420),
+    Transparent = true,
+    Theme = "Dark",
+    SideBarWidth = 160,
+    HideSearchBar = false,
+    ScrollBarEnabled = true,
+})
+
+Window:Tag({
+    Title = placeName,
+    Radius = 5,
+    Color = makeRainbowColor(0),
+})
+
+Window:EditOpenButton({
+    Title = "动物医院",
+    Icon = "wind",
+    CornerRadius = UDim.new(0, 8),
+    StrokeThickness = 2,
+    Color = makeRainbowColorSequence(0, 1, 1, 6),
+    Glow = true,
+    GlowColor = makeRainbowColor(180),
+    GlowTransparency = 0.35,
+    Draggable = true,
+})
+
+task.spawn(function()
+    repeat task.wait() until Window.OpenButtonMain and Window.OpenButtonMain.Button
+    local btn = Window.OpenButtonMain.Button
+    local textLabel = btn:FindFirstChildWhichIsA("TextLabel")
+    if textLabel then
+        textLabel.TextColor3 = makeRainbowColor(0)
+        textLabel.TextStrokeTransparency = 0.7
+        textLabel.TextStrokeColor3 = Color3.fromRGB(30, 30, 30)
+    end
+    local icon = btn:FindFirstChildWhichIsA("ImageLabel")
+    if icon then
+        icon.ImageColor3 = makeRainbowColor(120)
+    end
+end)
+
+-- ===== 彩虹边框系统 =====
+local borderEnabled = true
+
+local function ensureBlurElement()
+    local mainFrame = Window.UIElements and Window.UIElements.Main
+    if not mainFrame then return end
+    local blur = mainFrame:FindFirstChild("Blur")
+    if not blur then
+        blur = Instance.new("ImageLabel")
+        blur.Name = "Blur"
+        blur.Size = UDim2.new(1, 0, 1, 0)
+        blur.BackgroundTransparency = 1
+        blur.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+        blur.ImageTransparency = 0.15
+        blur.ZIndex = 0
+        blur.Parent = mainFrame
+    end
+    return blur
+end
+
+local function applyRainbowBorderColor(c, transparency)
+    transparency = transparency or 0.15
+    local f = c.UIElements and c.UIElements.Main or c.Frame or c.Gui or c
+    if not f then return false end
+    local g = f:FindFirstChild("Blur", true)
+    if g and g:IsA("ImageLabel") then
+        g.ImageColor3 = makeRainbowColor(0)
+        g.ImageTransparency = transparency
+        local existingGrad = g:FindFirstChild("WXHUBBorderGrad")
+        if not existingGrad then
+            existingGrad = Instance.new("UIGradient")
+            existingGrad.Name = "WXHUBBorderGrad"
+            existingGrad.Color = makeRainbowColorSequence(0, 1, 1, 6)
+            existingGrad.Rotation = 0
+            existingGrad.Parent = g
+        else
+            existingGrad.Color = makeRainbowColorSequence(0, 1, 1, 6)
+            existingGrad.Rotation = 0
+        end
+        return true
+    end
+    local h = f:FindFirstChild("Shadow", true)
+    if h and h:IsA("ImageLabel") then
+        h.ImageColor3 = makeRainbowColor(180)
+        h.ImageTransparency = transparency
+        local existingGrad = h:FindFirstChild("WXHUBBorderGrad")
+        if not existingGrad then
+            existingGrad = Instance.new("UIGradient")
+            existingGrad.Name = "WXHUBBorderGrad"
+            existingGrad.Color = makeRainbowColorSequence(180, 1, 0.8, 6)
+            existingGrad.Rotation = 0
+            existingGrad.Parent = h
+        else
+            existingGrad.Color = makeRainbowColorSequence(180, 1, 0.8, 6)
+            existingGrad.Rotation = 0
+        end
+        return true
+    end
+    return false
+end
+
+local borderConnection = nil
+
+local function startBorderAnimation()
+    if borderConnection then
+        borderConnection:Disconnect()
+        borderConnection = nil
+    end
+    if not borderEnabled then return end
+    ensureBlurElement()
+    borderConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        local mainFrame = Window.UIElements and Window.UIElements.Main
+        if not mainFrame or not mainFrame.Visible then return end
+        applyRainbowBorderColor(Window, 0.15)
+    end)
+end
+
+local function stopBorderAnimation()
+    if borderConnection then
+        borderConnection:Disconnect()
+        borderConnection = nil
+    end
+end
+
+local function setupVisibilityListener()
+    local mainFrame = Window.UIElements and Window.UIElements.Main
+    if not mainFrame then
+        task.spawn(function()
+            repeat task.wait() until Window.UIElements and Window.UIElements.Main
+            setupVisibilityListener()
+        end)
+        return
+    end
+    if mainFrame.Visible and borderEnabled then
+        startBorderAnimation()
+    elseif not mainFrame.Visible then
+        stopBorderAnimation()
+    end
+    mainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+        if mainFrame.Visible and borderEnabled then
+            startBorderAnimation()
+        else
+            stopBorderAnimation()
+        end
+    end)
+end
+
+setupVisibilityListener()
+Window:OnClose(function()
+    stopBorderAnimation()
+end)
+
+-- ===== 主窗口 UIStroke 彩虹边框 =====
+task.spawn(function()
+    repeat task.wait() until Window.UIElements and Window.UIElements.Main
+    local mainContainer = Window.UIElements.Main
+    if mainContainer then
+        local stroke = Instance.new("UIStroke")
+        stroke.Name = "WXHUBStroke"
+        stroke.Thickness = 2
+        stroke.Color = makeRainbowColor(0)
+        stroke.Transparency = 0.3
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Parent = mainContainer
+
+        local gradientElement = Instance.new("UIGradient")
+        gradientElement.Name = "WXHUBGradient"
+        gradientElement.Color = makeRainbowColorSequence(0, 1, 1, 7)
+        gradientElement.Rotation = 0
+        gradientElement.Parent = stroke
+
+        task.spawn(function()
+            while mainContainer and mainContainer.Parent do
+                task.wait(0.05)
+                gradientElement.Color = makeRainbowColorSequence(0, 1, 1, 7)
+                gradientElement.Rotation = 0
+                stroke.Color = makeRainbowColor(0)
+            end
+        end)
+    end
+end)
+
+-- ===== 打开按钮 彩虹边框 =====
+task.spawn(function()
+    repeat task.wait() until Window.OpenButtonMain and Window.OpenButtonMain.Button
+    local button = Window.OpenButtonMain.Button
+    local stroke = button:FindFirstChildWhichIsA("UIStroke")
+    if not stroke then return end
+    local grad = stroke:FindFirstChildWhichIsA("UIGradient")
+    if not grad then return end
+    grad.Color = makeRainbowColorSequence(0, 1, 1, 6)
+    grad.Rotation = 0
+    task.spawn(function()
+        while grad and grad.Parent do
+            task.wait(0.05)
+            grad.Color = makeRainbowColorSequence(tick() * 30, 1, 1, 6)
+            grad.Rotation = 0
+        end
+    end)
+end)
+
+-- ===== 顶部/底部彩虹辉光 =====
+task.spawn(function()
+    repeat task.wait() until Window.UIElements and Window.UIElements.Main
+    local mainFrame = Window.UIElements.Main
+    if not mainFrame then return end
+
+    local topGlow = Instance.new("Frame")
+    topGlow.Name = "TopGlow"
+    topGlow.Size = UDim2.new(1, 0, 0.3, 0)
+    topGlow.BackgroundTransparency = 1
+    topGlow.ZIndex = 0
+    topGlow.Parent = mainFrame
+
+    local topGrad = Instance.new("UIGradient")
+    topGrad.Color = ColorSequence.new(makeRainbowColor(0), makeRainbowColor(180))
+    topGrad.Transparency = NumberSequence.new(0.75, 1)
+    topGrad.Rotation = 90
+    topGrad.Parent = topGlow
+
+    local bottomGlow = Instance.new("Frame")
+    bottomGlow.Name = "BottomGlow"
+    bottomGlow.Size = UDim2.new(1, 0, 0.25, 0)
+    bottomGlow.Position = UDim2.new(0, 0, 0.75, 0)
+    bottomGlow.BackgroundTransparency = 1
+    bottomGlow.ZIndex = 0
+    bottomGlow.Parent = mainFrame
+
+    local bottomGrad = Instance.new("UIGradient")
+    bottomGrad.Color = ColorSequence.new(makeRainbowColor(180), makeRainbowColor(0))
+    bottomGrad.Transparency = NumberSequence.new(1, 0.92)
+    bottomGrad.Rotation = 90
+    bottomGrad.Parent = bottomGlow
+
+    task.spawn(function()
+        while topGlow and topGlow.Parent do
+            task.wait(0.1)
+            local c1 = makeRainbowColor(0)
+            local c2 = makeRainbowColor(180)
+            topGrad.Color = ColorSequence.new(c1, c2)
+            bottomGrad.Color = ColorSequence.new(c2, c1)
+        end
+    end)
+end)
+
+-- ===== 最小化窗口彩虹光晕效果 =====
+task.spawn(function()
+    local miniFrame = nil
+    for _ = 1, 120 do
+        if Window.MiniWindow and Window.MiniWindow.Frame then
+            miniFrame = Window.MiniWindow.Frame
+            break
+        end
+        local screenGui = Window.UIElements and Window.UIElements.Main and Window.UIElements.Main:FindFirstAncestorOfClass("ScreenGui")
+        if screenGui then
+            for _, desc in pairs(screenGui:GetDescendants()) do
+                if desc:IsA("Frame") and (desc.Name:lower():find("mini") or desc.Name:lower():find("minimize")) then
+                    if desc.Visible and desc ~= Window.UIElements.Main then
+                        miniFrame = desc
+                        break
+                    end
+                end
+            end
+            if miniFrame then break end
+        end
+        task.wait(0.25)
+    end
+
+    if not miniFrame then return end
+
+    for _, child in pairs(miniFrame:GetChildren()) do
+        if child.Name == "MiniGlowContainer" or child.Name == "MiniTopGlow" or child.Name == "MiniBottomGlow" then
+            child:Destroy()
+        end
+    end
+
+    local glowContainer = Instance.new("Frame")
+    glowContainer.Name = "MiniGlowContainer"
+    glowContainer.Size = UDim2.new(1, 16, 1, 16)
+    glowContainer.Position = UDim2.new(0, -8, 0, -8)
+    glowContainer.BackgroundColor3 = Color3.new(1, 1, 1)
+    glowContainer.BackgroundTransparency = 0
+    glowContainer.BorderSizePixel = 0
+    glowContainer.ZIndex = miniFrame.ZIndex - 1
+    glowContainer.Parent = miniFrame
+
+    local glowCorner = Instance.new("UICorner")
+    glowCorner.CornerRadius = UDim.new(0, 14)
+    glowCorner.Parent = glowContainer
+
+    local glowGrad = Instance.new("UIGradient")
+    glowGrad.Name = "MiniGlowGradient"
+    glowGrad.Color = makeRainbowColorSequence(0, 1, 1, 8)
+    glowGrad.Rotation = 0
+    glowGrad.Parent = glowContainer
+
+    local glowStroke = Instance.new("UIStroke")
+    glowStroke.Name = "MiniGlowStroke"
+    glowStroke.Thickness = 3
+    glowStroke.Color = Color3.new(1, 1, 1)
+    glowStroke.Transparency = 0.1
+    glowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    glowStroke.Parent = glowContainer
+
+    local glowStrokeGrad = Instance.new("UIGradient")
+    glowStrokeGrad.Color = makeRainbowColorSequence(180, 1, 0.9, 6)
+    glowStrokeGrad.Rotation = 0
+    glowStrokeGrad.Parent = glowStroke
+
+    local miniTopGlow = Instance.new("Frame")
+    miniTopGlow.Name = "MiniTopGlow"
+    miniTopGlow.Size = UDim2.new(1, 0, 0.45, 0)
+    miniTopGlow.BackgroundTransparency = 1
+    miniTopGlow.ZIndex = glowContainer.ZIndex
+    miniTopGlow.Parent = glowContainer
+
+    local miniTopGrad = Instance.new("UIGradient")
+    miniTopGrad.Color = makeRainbowColorSequence(0, 1, 1, 6)
+    miniTopGrad.Transparency = NumberSequence.new(0.55, 1)
+    miniTopGrad.Rotation = 90
+    miniTopGrad.Parent = miniTopGlow
+
+    local miniBottomGlow = Instance.new("Frame")
+    miniBottomGlow.Name = "MiniBottomGlow"
+    miniBottomGlow.Size = UDim2.new(1, 0, 0.45, 0)
+    miniBottomGlow.Position = UDim2.new(0, 0, 0.55, 0)
+    miniBottomGlow.BackgroundTransparency = 1
+    miniBottomGlow.ZIndex = glowContainer.ZIndex
+    miniBottomGlow.Parent = glowContainer
+
+    local miniBottomGrad = Instance.new("UIGradient")
+    miniBottomGrad.Color = makeRainbowColorSequence(180, 1, 1, 6)
+    miniBottomGrad.Transparency = NumberSequence.new(1, 0.55)
+    miniBottomGrad.Rotation = 90
+    miniBottomGrad.Parent = miniBottomGlow
+
+    task.spawn(function()
+        while glowContainer and glowContainer.Parent do
+            task.wait(0.05)
+            glowGrad.Color = makeRainbowColorSequence(0, 1, 1, 8)
+            glowStrokeGrad.Color = makeRainbowColorSequence(180, 1, 0.9, 6)
+            miniTopGrad.Color = makeRainbowColorSequence(0, 1, 1, 6)
+            miniBottomGrad.Color = makeRainbowColorSequence(180, 1, 1, 6)
+        end
+    end)
+end)
+
+-- =====================================================================
+--                    以下为《动物医院》功能逻辑（全中文化）
+-- =====================================================================
+
+local players = game:GetService("Players")
+local runService = game:GetService("RunService")
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local virtualUser = game:GetService("VirtualUser")
+local v1 = game:GetService("Workspace")
+local reHeartbeatMinigameComplete = game.ReplicatedStorage:WaitForChild("Util"):WaitForChild("Net"):WaitForChild("RE/HeartbeatMinigameComplete")
+
+-- 连接变量提前声明（UI 回调与启动区共用，避免被解析成全局）
+local connect4, connect5, connect6, connect7, connect8
+local misc2 = v1:FindFirstChild("Misc")
+
+-- ===== 彩虹通知 =====
+local function f1(title, content, p1)
+    local v2 = p1
+    if v2 == nil then
+        v2 = 5
+    end
+    WindUI:Notify({ Title = title, Content = content, Icon = "bell", Duration = v2 })
+end
+
+local localPlayer = players.LocalPlayer
+local npCs = workspace:WaitForChild("NPCs")
+local v3 = false
+local v4 = true
+local v5 = false
+local v6 = true
+local v7 = false
+local v8 = true
+local v9 = false
+local v10 = {}
+local v11 = true
+local v12 = true
+local v13 = {}
+local v14 = false
+local v17 = {}
+local v16 = false
+local walkSpeed = 16
+local v15 = true
+local v18 = true
+local v19 = true
+local v20 = false
+local v21 = false
+local v22 = false
+preventingAnomaly = false
+isTakingMed = nil
+
+local v23 = {
+  npc = nil,
+  step = "",
+  checkInFolder = nil,
+  counterCF = nil,
+  registerCF = nil,
+  roomName = nil,
+  medQueue = {},
+  medIndex = 1,
+}
+
+local reExtinguisherBubbleHitGrime = replicatedStorage.Util.Net["RE/ExtinguisherBubbleHitGrime"]
+local reExtinguisherBubbleHitFireNPC = replicatedStorage.Util.Net["RE/ExtinguisherBubbleHitFireNPC"]
+local reExtinguisherBubbleHit = replicatedStorage.Util.Net["RE/ExtinguisherBubbleHit"]
+local reExtinguisherBubbleHitHider = replicatedStorage.Util.Net["RE/ExtinguisherBubbleHitHider"]
+
+if localPlayer.Character and localPlayer.Character:FindFirstChild("Humanoid") then
+  walkSpeed = localPlayer.Character.Humanoid.WalkSpeed
+end
+
+local function f2()
+  if not npCs then
+    return
+  end
+  for index, value in ipairs(npCs:GetChildren()) do
+    if value:IsA("Model") then
+      local v24 = nil
+      for index2, value2 in ipairs(value:GetDescendants()) do
+        if value2:IsA("ProximityPrompt") and value2.Name == "FaintedPP" then
+          v24 = value2
+        end
+      end
+      if v24 and v24.Enabled and string.find(string.lower(v24.ActionText or ""), "carry") then
+        local findFirstChild = workspace:FindFirstChild(game.Players.LocalPlayer.Name)
+        local humanoidRootPart = findFirstChild
+        humanoidRootPart = findFirstChild and findFirstChild:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+          print("[自动搬运] 发现昏迷病人:", value.Name)
+          local cframe = humanoidRootPart.CFrame
+          humanoidRootPart.CFrame = value:GetPivot() * CFrame.new(0, 0, -3)
+          task.wait(0.2)
+          local requiresLineOfSight = v24.RequiresLineOfSight
+          v24.RequiresLineOfSight = false
+          fireproximityprompt(v24)
+          v24.RequiresLineOfSight = requiresLineOfSight
+          task.wait(0.5)
+          local designatedRoom = value:GetAttribute("DesignatedRoom")
+          local v25 = "Medical"
+          if string.find(designatedRoom, "Room6") or string.find(designatedRoom, "Room7")
+            or string.find(designatedRoom, "Room8") then
+            v25 = "Emergency"
+          end
+          local findFirstChild2 = workspace.Rooms:FindFirstChild(v25)
+          local findFirstChild3 = findFirstChild2
+          findFirstChild3 = findFirstChild2
+            and workspace.Rooms[v25]:FindFirstChild(designatedRoom)
+          local bed = findFirstChild3 and findFirstChild3:FindFirstChild("Minigame")
+            and findFirstChild3.Minigame:FindFirstChild("Bed")
+          if bed then
+            local getPivot = bed:GetPivot()
+            local v26 = CFrame.new(
+              getPivot.Position.X, findFirstChild.HumanoidRootPart.Position.Y,
+              getPivot.Position.Z
+            ) * CFrame.new(0, 0, -4)
+            humanoidRootPart.CFrame = CFrame.new(v26.Position, Vector3.new(
+              getPivot.Position.X, v26.Position.Y, getPivot.Position.Z
+            ))
+            task.wait(0.5)
+            local v27 = nil
+            for index3, value3 in ipairs(bed:GetDescendants()) do
+              if value3.Name == "FaintedPP" and value3:IsA("ProximityPrompt") then
+                v27 = value3
+              end
+            end
+            if not v27 then
+              for index4, value4 in ipairs(bed:GetDescendants()) do
+                if value4:IsA("ProximityPrompt") and value4.Enabled then
+                  v27 = value4
+                end
+              end
+            end
+            if v27 and v27.Enabled then
+              local requiresLineOfSight2 = v27.RequiresLineOfSight
+              v27.RequiresLineOfSight = false
+              fireproximityprompt(v27)
+              task.wait(2)
+              v27.RequiresLineOfSight = requiresLineOfSight2
+              print("[自动搬运] 已成功把病人放到床上:", designatedRoom)
+            end
+          end
+          humanoidRootPart.CFrame = cframe
+          break
+        end
+      end
+    end
+  end
+end
+
+local function f3(p2)
+  for index5, value5 in ipairs(workspace:GetDescendants()) do
+    if value5.Name == p2 and value5.Parent
+      and (value5.Parent.Name == "Items" or value5.Parent.Name == "Model") then
+      return value5:FindFirstChild("PP")
+    end
+  end
+  return nil
+end
+
+local connect
+
+local function f4(p3)
+  local localPlayer2 = players.LocalPlayer
+  if p3 then
+    connect = localPlayer2.Idled:Connect(function()
+      virtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+      task.wait(1)
+      virtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+      print("[防挂机] 成功阻止挂机踢出!")
+    end)
+    f1("自动化", "防挂机已开启：可以放心离开!", 3)
+  else
+    if connect then
+      connect:Disconnect()
+      connect = nil
+    end
+    f1("自动化", "防挂机已关闭", 3)
+  end
+end
+
+local function f5(p4)
+  v3 = p4
+  if v3 then
+    f1("成功", "即时交互已开启（后台持续生效）!", 3)
+    for index6, value6 in ipairs(workspace:GetDescendants()) do
+      if value6:IsA("ProximityPrompt") then
+        if not v10[value6] then
+          v10[value6] = value6.HoldDuration
+        end
+        value6.HoldDuration = 0
+      end
+    end
+    task.spawn(function()
+      while v3 do
+        task.wait(2)
+        for index7, value7 in ipairs(workspace:GetDescendants()) do
+          if not v3 then
+            break
+          elseif value7:IsA("ProximityPrompt") then
+            if value7.HoldDuration ~= 0 then
+              if not v10[value7] then
+                v10[value7] = value7.HoldDuration
+              end
+              value7.HoldDuration = 0
+            end
+          end
+        end
+      end
+    end)
+  else
+    f1("成功", "即时交互已关闭：长按恢复正常!", 3)
+    v3 = false
+    for key, value8 in pairs(v10) do
+      if key and key.Parent then
+        key.HoldDuration = value8
+      end
+    end
+    v10 = {}
+  end
+end
+
+local function f6()
+  if not npCs then
+    return
+  end
+  for index8, value9 in ipairs(npCs:GetChildren()) do
+    if value9:IsA("Model") and (value9.Name ~= "Hider" or value9.Name ~= "TallMonster") then
+      if not value9:FindFirstChild("HumanoidRootPart") then
+      else
+        local findFirstChild4 = value9.HumanoidRootPart:FindFirstChild("PP", true)
+        if findFirstChild4 and findFirstChild4.Enabled
+          and string.find(string.lower(findFirstChild4.ActionText or ""), "knock") then
+          local findFirstChild5 = workspace:FindFirstChild(game.Players.LocalPlayer.Name)
+          if findFirstChild5 and findFirstChild5:FindFirstChild("HumanoidRootPart") then
+            findFirstChild5.HumanoidRootPart.CFrame = value9:GetPivot() * CFrame.new(0, 0, -3)
+            task.wait(0.2)
+            local requiresLineOfSight3 = findFirstChild4.RequiresLineOfSight
+            findFirstChild4.RequiresLineOfSight = false
+            fireproximityprompt(findFirstChild4)
+            findFirstChild4.RequiresLineOfSight = requiresLineOfSight3
+            task.wait(0.5)
+            break
+          end
+        end
+      end
+    end
+  end
+end
+
+local walkSpeed2 = walkSpeed
+
+local function f7()
+  for index9, value10 in ipairs(workspace.Rooms.Medical:GetDescendants()) do
+    if value10:IsA("Model") and value10.Name == "Candles" then
+      print("检测到蜡烛仪式")
+      local eyeDrops = f3("Eye Drops")
+      if eyeDrops then
+        local localPlayer3 = game.Players.LocalPlayer
+        local v28 = workspace[localPlayer3.Name]
+        if v28 then
+          v28:FindFirstChild("HumanoidRootPart")
+        end
+        local parent = eyeDrops.Parent
+        v28.HumanoidRootPart.CFrame = parent:GetPivot()
+        task.wait(0.5)
+        fireproximityprompt(eyeDrops)
+        local humanoid = v28
+        humanoid = v28 and v28:FindFirstChild("Humanoid")
+        local eyeDrops2 = localPlayer3.Backpack:FindFirstChild("Eye Drops")
+        local eyeDrops3 = eyeDrops2
+        eyeDrops3 = eyeDrops2 or v28:FindFirstChild("Eye Drops")
+        for index10, value11 in ipairs(value10:GetDescendants()) do
+          if eyeDrops3 and humanoid and not v28:FindFirstChild("Eye Drops") then
+            humanoid:EquipTool(eyeDrops3)
+          end
+          v28.HumanoidRootPart.CFrame = value11:GetPivot()
+          fireproximityprompt((value11:FindFirstChild("PP", true)))
+          task.wait(0.2)
+        end
+      end
+    end
+  end
+end
+
+task.spawn(function()
+  while task.wait(1) do
+    if v15 then
+      f2()
+    end
+    if v18 then
+      f6()
+    end
+    if v19 then
+      f7()
+    end
+  end
+end)
+
+local function f8(p5)
+  task.wait(1)
+  for i = 1, 5 do
+    reExtinguisherBubbleHitGrime:FireServer(p5)
+  end
+  f1("成功", "已清理史莱姆", 3)
+end
+
+local function f9(p6)
+  task.wait(2)
+  while p6 and (p6:GetAttribute("FireCharges") or 0) > 0 do
+    reExtinguisherBubbleHitFireNPC:FireServer(p6)
+    task.wait(0.1)
+  end
+  f1("成功", "已扑灭着火的病人", 3)
+end
+
+local function f10(p7, p8)
+  local connect2 = p7:GetPropertyChangedSignal("Playing"):Connect(function()
+    if not v12 then
+      return
+    elseif p7.Playing then
+      if v14 then
+        return
+      end
+      table.insert(v13, p8)
+      if #v13 == 4 then
+        v14 = true
+        task.spawn(function()
+          task.wait(2)
+          for index11, value12 in ipairs(v13) do
+            if value12 and value12.Parent then
+              fireclickdetector(value12)
+            end
+            task.wait(1)
+          end
+          task.wait(1)
+          table.clear(v13)
+          v14 = false
+        end)
+      end
+      return
+    else
+      return
+    end
+  end)
+end
+
+local function f11(p9)
+  while p9 and p9.Parent do
+    reExtinguisherBubbleHit:FireServer(p9:GetChildren()[1])
+    task.wait(0.1)
+  end
+  f1("成功", "已扑灭火灾", 3)
+end
+
+local function f12()
+  local character = players.LocalPlayer.Character
+  local humanoidRootPart2 = character and character:FindFirstChild("HumanoidRootPart")
+  if humanoidRootPart2 then
+    for index12, value13 in ipairs(workspace:GetDescendants()) do
+      if value13.Name == "MainLook" and value13:IsA("BasePart") then
+        local pp = value13:FindFirstChild("PP")
+        if pp and pp.Enabled then
+          local cframe2 = humanoidRootPart2.CFrame
+          humanoidRootPart2.CFrame = value13.CFrame * CFrame.new(0, 0, -2.5)
+          task.wait(0.2)
+          local requiresLineOfSight4 = pp.RequiresLineOfSight
+          pp.RequiresLineOfSight = false
+          fireproximityprompt(pp)
+          pp.RequiresLineOfSight = requiresLineOfSight4
+          task.wait(0.2)
+          humanoidRootPart2.CFrame = cframe2
+          break
+        end
+      end
+    end
+  end
+end
+
+local function f13()
+  table.clear(v13)
+  v14 = false
+  game.Workspace.Rooms.Emergency.Room6.Minigame.xrayMonitor.Screen["computer log out"]:GetPropertyChangedSignal("Playing"):Connect(function()
+    table.clear(v13)
+    v14 = false
+  end)
+  for index13, value14 in ipairs(workspace:GetDescendants()) do
+    if value14.Name == "Model" and value14.Parent and value14.Parent.Name == "Colors" then
+      local button = value14:FindFirstChild("Button")
+      if button then
+        local boop = button:FindFirstChild("boop")
+        local clickDetector = button:FindFirstChild("ClickDetector")
+        if boop and clickDetector then
+          f10(boop, clickDetector)
+        end
+      end
+    end
+  end
+end
+
+local function f14()
+  local frame = players.LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("HeartbeatMinigameUI"):WaitForChild("Frame")
+  frame:GetPropertyChangedSignal("Visible"):Connect(function()
+    if frame.Visible == true and v4 then
+      reHeartbeatMinigameComplete:FireServer(v1.Rooms.Emergency.Room7, true)
+    end
+  end)
+end
+
+task.spawn(function()
+  while task.wait(1) do
+    if v9 then
+      f12()
+    end
+    if v11 then
+      local npCs2 = workspace:FindFirstChild("NPCs")
+      if npCs2 then
+        for index14, value15 in ipairs(npCs2:GetChildren()) do
+          if value15:IsA("Model") then
+            local fireCharges = value15:GetAttribute("FireCharges")
+            if fireCharges and fireCharges > 0 then
+              task.spawn(f9, value15)
+            end
+          end
+        end
+      end
+    end
+  end
+end)
+
+f14()
+
+local v29 = {
+  EyeMass = false,
+  TallMonster = false,
+  BedMonster = false,
+  Ghost = false,
+  Hider = false,
+}
+
+local connect3, f15
+
+local function f16()
+  if v29.EyeMass or v29.TallMonster or v29.BedMonster or v29.Ghost or v29.Hider then
+    for index15, value16 in ipairs(workspace:GetDescendants()) do
+      f15(value16)
+    end
+    if not connect3 then
+      connect3 = workspace.DescendantAdded:Connect(function(descendant)
+        task.wait(0.05)
+        if descendant and descendant.Parent then
+          f15(descendant)
+        end
+      end)
+    end
+  elseif connect3 then
+    connect3:Disconnect()
+    connect3 = nil
+  end
+end
+
+function f15(p10)
+  if v29[p10.Name] then
+    f1("提示", p10.Name .. " 已成功击杀", 3)
+    p10:Destroy()
+  end
+end
+
+local v30 = true
+local v31 = true
+
+local v32 = {
+  "CameraEffect", "Skinwalker", "BrokenBones", "CursedPhoto", "DifferentEars", "DifferentFace",
+  "HiddenFace", "LizInfectedFace", "SkinwalkerOpensMouth", "Static", "TwistNeck",
+  "VoidPresence",
+}
+
+local v33 = {
+  Ears = true,
+  Tail = true,
+  NameTag = true,
+  Model = true,
+  Suitcase = true,
+}
+
+local function f17(p11)
+  if not p11:IsA("Model") then
+    return false
+  elseif v33[p11.Name] then
+    return false
+  else
+    local parent2 = p11.Parent
+    while parent2 and parent2 ~= npCs and parent2 ~= v1 do
+      if parent2:IsA("Model") then
+        return false
+      end
+      parent2 = parent2.Parent
+    end
+    return true
+  end
+end
+
+local f18
+
+local function f19(p12)
+  if p12.Name == "Doctor" then
+    return false
+  else
+    local isVisitor = p12:GetAttribute("IsVisitor")
+    local isPatient = p12:GetAttribute("IsPatient")
+    if p12:GetAttribute("SkippedCheckIn") then
+      return true
+    end
+    if not isVisitor and not isPatient then
+      return false
+    end
+    if f18(p12) then
+      return false
+    elseif p12:WaitForChild("PP").ActionText == "Ask to Leave" then
+      return false
+    else
+      local head002 = p12:FindFirstChild("Head.002")
+      if head002 and head002:IsA("MeshPart")
+        and string.find(head002.TextureID, "125294235208418") then
+        return false
+      end
+      return true
+    end
+  end
+end
+
+function f18(p13)
+  local v34 = false
+  local name
+  for index16, value17 in ipairs(v32) do
+    if p13:GetAttribute(value17) then
+      name = value17
+      v34 = true
+      break
+    end
+  end
+  local anomalies = npCs:FindFirstChild("Anomalies")
+  if anomalies and p13:IsDescendantOf(anomalies) then
+    v34 = true
+    if not name then
+      name = p13.Name
+    end
+  end
+  return v34, name
+end
+
+local function f20(p14)
+  if f17(p14) then
+    local v35, name2 = f18(p14)
+    local v36 = false
+    local head0022 = p14:FindFirstChild("Head.002")
+    if head0022 and head0022:IsA("MeshPart") then
+      if string.find(head0022.TextureID, "125294235208418") then
+        v35 = true
+        if not name2 then
+          name2 = "Headbang"
+        end
+      end
+    end
+    if p14:WaitForChild("PP").ActionText == "Ask to Leave" then
+      v35 = true
+      if not name2 then
+        name2 = "Headbang"
+      end
+    end
+    if p14.Name == "Ghost" or p14.Name == "TallMonster" or p14.Name == "Hider"
+      or p14.Name == "StalkerMonster" then
+      v35 = true
+      name2 = p14.Name
+    end
+    local v37 = p14:GetAttribute("PhotoEffect") == "LizInfectedFace"
+    if v37 then
+      v35 = true
+      name2 = "LIZ UV CAMERA QUEST"
+    end
+    if v35 and v30 then
+      v36 = true
+    elseif not v35 and v31 then
+      v36 = true
+    end
+    local head = p14:FindFirstChild("Head") or p14.PrimaryPart
+      or p14:FindFirstChildWhichIsA("BasePart")
+    local npcESP = p14:FindFirstChild("NPC_ESP")
+    local npcTextESP = head
+    npcTextESP = head and head:FindFirstChild("NPC_TextESP")
+    if v36 then
+      if not npcESP then
+        npcESP = Instance.new("Highlight")
+        npcESP.Name = "NPC_ESP"
+        npcESP.FillTransparency = 0.5
+        npcESP.OutlineTransparency = 0
+        npcESP.OutlineColor = Color3.fromRGB(255, 255, 255)
+        npcESP.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        npcESP.Parent = p14
+      end
+      if v37 then
+        npcESP.FillColor = Color3.fromRGB(255, 255, 0)
+      elseif v35 then
+        npcESP.FillColor = Color3.fromRGB(255, 0, 0)
+      else
+        npcESP.FillColor = Color3.fromRGB(0, 255, 0)
+      end
+      if head then
+        if not npcTextESP then
+          npcTextESP = Instance.new("BillboardGui")
+          npcTextESP.Name = "NPC_TextESP"
+          npcTextESP.Size = UDim2.new(0, 200, 0, 50)
+          npcTextESP.StudsOffset = Vector3.new(0, 3, 0)
+          npcTextESP.AlwaysOnTop = true
+          local textLabel = Instance.new("TextLabel")
+          textLabel.Size = UDim2.new(1, 0, 1, 0)
+          textLabel.BackgroundTransparency = 1
+          textLabel.TextScaled = false
+          textLabel.TextSize = 7
+          textLabel.Font = Enum.Font.GothamBold
+          textLabel.TextStrokeTransparency = 0
+          textLabel.Parent = npcTextESP
+          npcTextESP.Parent = head
+        end
+        local textLabel2 = npcTextESP:FindFirstChildWhichIsA("TextLabel")
+        if textLabel2 then
+          textLabel2.Text = v35 and (name2 or "Anomaly") or p14.Name
+          textLabel2.TextColor3 = v35 and Color3.fromRGB(255, 50, 50)
+            or Color3.fromRGB(50, 255, 50)
+        end
+      end
+    else
+      if npcESP then
+        npcESP:Destroy()
+      end
+      if npcTextESP then
+        npcTextESP:Destroy()
+      end
+    end
+  end
+end
+
+local function f21()
+  local localPlayer4 = players.LocalPlayer
+  local humanoidRootPart3 = (localPlayer4.Character or localPlayer4.CharacterAdded:Wait()):FindFirstChild("HumanoidRootPart")
+  local coffeeMachine = v1:FindFirstChild("Misc") and v1.Misc:FindFirstChild("CoffeeMachine")
+  if humanoidRootPart3 and coffeeMachine then
+    local pp2 = coffeeMachine:FindFirstChild("Coffee")
+      and coffeeMachine.Coffee:FindFirstChild("PP")
+    if pp2 then
+      local cframe3 = humanoidRootPart3.CFrame
+      humanoidRootPart3.CFrame = CFrame.new(
+        -120.307625, 3.41253114, 10.0235615, 0.0349012539, 6.40760263e-8, 0.999390781,
+        -6.04629165e-8, 1, -6.20035721e-8, -0.999390781, -5.82620778e-8, 0.0349012539
+      )
+      task.wait(0.15)
+      fireproximityprompt(pp2)
+      task.wait(0.15)
+      humanoidRootPart3.CFrame = cframe3
+    end
+  end
+end
+
+task.spawn(function()
+  local status = v1:WaitForChild("Misc"):WaitForChild("CoffeeMachine"):WaitForChild("Attachment"):WaitForChild("UI"):WaitForChild("status")
+  status:GetPropertyChangedSignal("Text"):Connect(function()
+    if v5 and status.Text == "coffee: <font color='rgb(0, 200, 0)'>ready</font>" then
+      f21()
+    end
+  end)
+end)
+
+local v38
+
+local v39 = hookmetamethod(game, "__namecall", function(p15, ...)
+  if v6 and getnamecallmethod() == "FireServer"
+    and string.find(tostring(p15), "PlayerLostSanity") then
+    return
+  end
+  return v38(p15, ...)
+end)
+
+local function f22()
+  for index17, value18 in ipairs(npCs:GetDescendants()) do
+    f20(value18)
+  end
+end
+
+v38 = v39
+
+npCs.DescendantAdded:Connect(function(descendant2)
+  task.wait(0.1)
+  f20(descendant2)
+end)
+
+local function f23(p16, p17, p18, p19)
+  local localPlayer5 = players.LocalPlayer
+  local humanoidRootPart4 = localPlayer5.Character
+    and localPlayer5.Character:FindFirstChild("HumanoidRootPart")
+  if not p16 or not p16.Parent then
+    return false
+  else
+    local v40 = string.lower(p16.ActionText or "")
+    local v41 = p17 and string.lower(p17) or nil
+    local v42 = not v41
+    local enabled = p16.Enabled
+    if not (enabled and (v42 or string.find(v40, v41))) then
+      return false
+    else
+      if humanoidRootPart4 and p18 then
+        if (humanoidRootPart4.Position - p18.Position).Magnitude > 2 then
+          humanoidRootPart4.CFrame = p18
+          task.wait(0.2)
+        end
+      end
+      task.wait(0.25)
+      local requiresLineOfSight5 = p16.RequiresLineOfSight
+      p16.RequiresLineOfSight = false
+      fireproximityprompt(p16)
+      p16.RequiresLineOfSight = requiresLineOfSight5
+      task.wait(0.25)
+      return true
+    end
+  end
+end
+
+local function f24(p20)
+  local npc = p20.npc
+  local step = p20.step
+  local checkInFolder = p20.checkInFolder
+  local roomName = p20.roomName
+  local v43 = "Medical"
+  if step == "DonePatient" or step == "DoneVisitor" then
+    return step
+  end
+  if npc.Name == "StalkerMonster" then
+    if v1.Misc:FindFirstChild("StrangePaper")
+      and v1.Misc:FindFirstChild("StrangePaper").PP.Enabled then
+      return "StalkerCheckin"
+    end
+    if checkInFolder:FindFirstChild("CheckStepHighlight", true)
+      and checkInFolder:FindFirstChild("CheckStepHighlight", true).Parent.Name == "Camera" then
+      return "StalkerPhoto"
+    end
+  end
+  if string.find(roomName, "Room6") or string.find(roomName, "Room7")
+    or string.find(roomName, "Room8") then
+    v43 = "Emergency"
+  end
+  local findFirstChild6
+  if npc:FindFirstChild("CheckStepHighlight", true) then
+    return "Talk"
+  else
+    local findFirstChild7 = checkInFolder:FindFirstChild("CheckStepHighlight", true)
+    if findFirstChild7 and not npc:GetAttribute("CompletedCheckIn")
+      and not npc:GetAttribute("SkippedCheckIn") then
+      if findFirstChild7.Parent.Name == "Form" then
+        return "Stamp"
+      elseif findFirstChild7.Parent.Name == "Camera" then
+        return "Photo"
+      elseif findFirstChild7.Parent.Name == "PrintedBadge" then
+        return "TakeBadge"
+      end
+    end
+    if v1.Misc.CheckIn:FindFirstChild("CheckStepHighlight", true)
+      and (not npc:GetAttribute("CompletedCheckIn") or not npc:GetAttribute("SkippedCheckIn")) then
+      if tostring(v1.Misc.CheckIn.Computer:GetAttribute("InUse")) ~= "0" then
+        return "Register"
+      end
+      if tostring(v1.Misc.CheckIn.Printer:GetAttribute("InUse")) ~= "0" then
+        return "Print"
+      end
+    end
+    local minigame = v1.Rooms[v43][roomName].Minigame
+    local findFirstChild8 = minigame:FindFirstChild("PatientHighlight", true)
+    if findFirstChild8 then
+      if findFirstChild8.Parent.Name == "Monitor" then
+        if findFirstChild8.Parent.Parent.Name == "xrayMonitor" then
+          return "BeginXRay"
+        elseif findFirstChild8.Parent.Parent.Name == "Monitor" then
+          if roomName == "Room6" then
+            return "ProcessMonitor6"
+          end
+          if roomName == "Room7" then
+            return "ProcessMonitor7"
+          end
+          return "ProcessMonitor"
+        else
+          if minigame.Monitor.Screen.UI.Enabled and minigame.TV.Screen.UI.Enabled then
+            if not minigame.TV.Screen.UI.Healing.Visible and step ~= "EquipMedicine"
+              and step ~= "ApplyTreatment" and step ~= "TakeMedicine" then
+              if roomName == "Room6" or roomName == "Room7" then
+                return "GetIllness"
+              end
+              return "ReadUI"
+            elseif minigame.TV.Screen.UI.Healing.Visible then
+              return "DonePatient"
+            end
+          end
+          findFirstChild6 = npc:FindFirstChild("PP", true)
+          if npc:FindFirstChild("PatientHighlight", true) then
+            if string.find(findFirstChild6.ActionText, "DNA") and findFirstChild6.Enabled then
+              return "WaitTakeDNA"
+            else
+              local v44 = roomName == "Room7"
+              local v45 = v44
+              if v44 then
+                local pp22 = minigame.Bed.InBed:WaitForChild("PP2")
+                local v46 = pp22
+                if pp22 then
+                  local enabled2 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+                  local v47 = enabled2
+                  if enabled2 then
+                    local inBed = minigame.Bed.InBed
+                    v47 = string.find(inBed:WaitForChild("PP2").ActionText, "Prepare")
+                  end
+                  v46 = v47
+                end
+                v45 = v46
+              end
+              if v45 then
+                return "PreparePatient"
+              else
+                local v48 = roomName == "Room8"
+                local v49 = v48
+                if v48 then
+                  local pp23 = minigame.Bed.InBed:WaitForChild("PP2")
+                  local v50 = pp23
+                  if pp23 then
+                    local enabled3 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+                    local v51 = enabled3
+                    if enabled3 then
+                      local inBed2 = minigame.Bed.InBed
+                      v51 = string.find(inBed2:WaitForChild("PP2").ActionText, "Sleep")
+                    end
+                    v50 = v51
+                  end
+                  v49 = v50
+                end
+                if v49 then
+                  return "Room8_Prepare"
+                end
+                return p20.step
+              end
+            end
+          else
+            return p20.step
+          end
+        end
+      else
+        if findFirstChild8.Parent.Name == "Printer" then
+          return "CollectXRay6"
+        end
+        if roomName == "Room7" and findFirstChild8.Parent.Name == "StandIV" then
+          return "SetUp"
+        elseif findFirstChild8.Parent.Name == "Machine" then
+          return "TurnOnMachine"
+        elseif findFirstChild8.Parent.Name == "HeartMonitor" then
+          return "BeginHeartBeat"
+        elseif findFirstChild8.Parent.Name == "Printer" then
+          if roomName == "Room7" then
+            return "CollectXRay"
+          end
+          if roomName == "Room6" then
+            return "CollectXRay6"
+          end
+          if minigame.Monitor.Screen.UI.Enabled and minigame.TV.Screen.UI.Enabled then
+            if not minigame.TV.Screen.UI.Healing.Visible and step ~= "EquipMedicine"
+              and step ~= "ApplyTreatment" and step ~= "TakeMedicine" then
+              if roomName == "Room6" or roomName == "Room7" then
+                return "GetIllness"
+              end
+              return "ReadUI"
+            elseif minigame.TV.Screen.UI.Healing.Visible then
+              return "DonePatient"
+            end
+          end
+          findFirstChild6 = npc:FindFirstChild("PP", true)
+          if npc:FindFirstChild("PatientHighlight", true) then
+            if string.find(findFirstChild6.ActionText, "DNA") and findFirstChild6.Enabled then
+              return "WaitTakeDNA"
+            else
+              local v52 = roomName == "Room7"
+              local v53 = v52
+              if v52 then
+                local pp24 = minigame.Bed.InBed:WaitForChild("PP2")
+                local v54 = pp24
+                if pp24 then
+                  local enabled4 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+                  local v55 = enabled4
+                  if enabled4 then
+                    local inBed3 = minigame.Bed.InBed
+                    v55 = string.find(inBed3:WaitForChild("PP2").ActionText, "Prepare")
+                  end
+                  v54 = v55
+                end
+                v53 = v54
+              end
+              if v53 then
+                return "PreparePatient"
+              else
+                local v56 = roomName == "Room8"
+                local v57 = v56
+                if v56 then
+                  local pp25 = minigame.Bed.InBed:WaitForChild("PP2")
+                  local v58 = pp25
+                  if pp25 then
+                    local enabled5 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+                    local v59 = enabled5
+                    if enabled5 then
+                      local inBed4 = minigame.Bed.InBed
+                      v59 = string.find(inBed4:WaitForChild("PP2").ActionText, "Sleep")
+                    end
+                    v58 = v59
+                  end
+                  v57 = v58
+                end
+                if v57 then
+                  return "Room8_Prepare"
+                end
+                return p20.step
+              end
+            end
+          else
+            return p20.step
+          end
+        else
+          if findFirstChild8.Parent.Name == "Analyzer" then
+            return "Analyze"
+          end
+          if minigame.Monitor.Screen.UI.Enabled and minigame.TV.Screen.UI.Enabled then
+            if not minigame.TV.Screen.UI.Healing.Visible and step ~= "EquipMedicine"
+              and step ~= "ApplyTreatment" and step ~= "TakeMedicine" then
+              if roomName == "Room6" or roomName == "Room7" then
+                return "GetIllness"
+              end
+              return "ReadUI"
+            elseif minigame.TV.Screen.UI.Healing.Visible then
+              return "DonePatient"
+            end
+          end
+          findFirstChild6 = npc:FindFirstChild("PP", true)
+          if npc:FindFirstChild("PatientHighlight", true) then
+            if string.find(findFirstChild6.ActionText, "DNA") and findFirstChild6.Enabled then
+              return "WaitTakeDNA"
+            else
+              local v60 = roomName == "Room7"
+              local v61 = v60
+              if v60 then
+                local pp26 = minigame.Bed.InBed:WaitForChild("PP2")
+                local v62 = pp26
+                if pp26 then
+                  local enabled6 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+                  local v63 = enabled6
+                  if enabled6 then
+                    local inBed5 = minigame.Bed.InBed
+                    v63 = string.find(inBed5:WaitForChild("PP2").ActionText, "Prepare")
+                  end
+                  v62 = v63
+                end
+                v61 = v62
+              end
+              if v61 then
+                return "PreparePatient"
+              else
+                local v64 = roomName == "Room8"
+                local v65 = v64
+                if v64 then
+                  local pp27 = minigame.Bed.InBed:WaitForChild("PP2")
+                  local v66 = pp27
+                  if pp27 then
+                    local enabled7 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+                    local v67 = enabled7
+                    if enabled7 then
+                      local inBed6 = minigame.Bed.InBed
+                      v67 = string.find(inBed6:WaitForChild("PP2").ActionText, "Sleep")
+                    end
+                    v66 = v67
+                  end
+                  v65 = v66
+                end
+                if v65 then
+                  return "Room8_Prepare"
+                end
+                return p20.step
+              end
+            end
+          else
+            return p20.step
+          end
+        end
+      end
+    else
+      if minigame.Monitor.Screen.UI.Enabled and minigame.TV.Screen.UI.Enabled then
+        if not minigame.TV.Screen.UI.Healing.Visible and step ~= "EquipMedicine"
+          and step ~= "ApplyTreatment" and step ~= "TakeMedicine" then
+          if roomName == "Room6" or roomName == "Room7" then
+            return "GetIllness"
+          end
+          return "ReadUI"
+        elseif minigame.TV.Screen.UI.Healing.Visible then
+          return "DonePatient"
+        end
+      end
+      findFirstChild6 = npc:FindFirstChild("PP", true)
+      if npc:FindFirstChild("PatientHighlight", true) then
+        if string.find(findFirstChild6.ActionText, "DNA") and findFirstChild6.Enabled then
+          return "WaitTakeDNA"
+        else
+          local v68 = roomName == "Room7"
+          local v69 = v68
+          if v68 then
+            local pp28 = minigame.Bed.InBed:WaitForChild("PP2")
+            local v70 = pp28
+            if pp28 then
+              local enabled8 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+              local v71 = enabled8
+              if enabled8 then
+                local inBed7 = minigame.Bed.InBed
+                v71 = string.find(inBed7:WaitForChild("PP2").ActionText, "Prepare")
+              end
+              v70 = v71
+            end
+            v69 = v70
+          end
+          if v69 then
+            return "PreparePatient"
+          else
+            local v72 = roomName == "Room8"
+            local v73 = v72
+            if v72 then
+              local pp29 = minigame.Bed.InBed:WaitForChild("PP2")
+              local v74 = pp29
+              if pp29 then
+                local enabled9 = minigame.Bed.InBed:WaitForChild("PP2").Enabled
+                local v75 = enabled9
+                if enabled9 then
+                  local inBed8 = minigame.Bed.InBed
+                  v75 = string.find(inBed8:WaitForChild("PP2").ActionText, "Sleep")
+                end
+                v74 = v75
+              end
+              v73 = v74
+            end
+            if v73 then
+              return "Room8_Prepare"
+            end
+            return p20.step
+          end
+        end
+      else
+        return p20.step
+      end
+    end
+  end
+end
+
+local function f25(p21, p22)
+  local v76 = p22 or "a1"
+  for key2, value19 in pairs(p21) do
+    local v77 = v76 .. "[" .. tostring(key2) .. "]"
+    if type(value19) == "table" then
+      print(v77, "= <table>")
+      f25(value19, v77)
+    else
+      print(v77, "=", value19)
+    end
+  end
+end
+
+local v78
+
+local function f26(p23)
+  local room8 = v1.Rooms.Emergency:FindFirstChild("Room8")
+  if not room8 then
+    return
+  else
+    local tv = room8:FindFirstChild("Minigame") and room8.Minigame:FindFirstChild("TV")
+    local inv = tv and tv:FindFirstChild("Screen") and tv.Screen:FindFirstChild("UI")
+      and tv.Screen.UI:FindFirstChild("Report") and tv.Screen.UI.Report:FindFirstChild("inv")
+    if not inv then
+      return
+    end
+    if p23.step == "Room8_SingleLoop" then
+      task.wait(1)
+      local name3 = nil
+      for index18, value20 in ipairs(inv:GetChildren()) do
+        if value20:IsA("Frame") then
+          name3 = value20.Name
+          break
+        end
+      end
+      if name3 then
+        print(string.format("[8号房] 第%d轮 - 取药: %s", p23.room8Count, name3))
+        local v79 = f3(name3)
+        if v79 and v79.Parent then
+          f23(v79, nil, v79.Parent:GetPivot(), name3)
+          task.wait(0.5)
+          local localPlayer6 = game.Players.LocalPlayer
+          local v80 = v1[localPlayer6.Name]
+          local humanoid2 = v80
+          humanoid2 = v80 and v80:FindFirstChild("Humanoid")
+          local findFirstChild9 = localPlayer6.Backpack:FindFirstChild(name3)
+          local findFirstChild10 = findFirstChild9
+          findFirstChild10 = findFirstChild9 or v80:FindFirstChild(name3)
+          if findFirstChild10 and humanoid2 and not v80:FindFirstChild(name3) then
+            humanoid2:EquipTool(findFirstChild10)
+          end
+          task.wait(0.5)
+          local bed2 = room8.Minigame:FindFirstChild("Bed")
+          local pp3 = bed2.InBed:FindFirstChild("PP")
+          local getPivot2 = bed2
+          getPivot2 = bed2 and bed2:GetPivot()
+          local cframe4 = getPivot2
+          cframe4 = getPivot2 or CFrame.new()
+          if f23(pp3, "apply treatment", CFrame.new(
+            cframe4.Position.X, v80.HumanoidRootPart.Position.Y, cframe4.Position.Z
+          ) * CFrame.new(0, 0, -4), "8号房病床") then
+            p23.room8Count = p23.room8Count + 1
+            if p23.room8Count > 5 then
+              print("[8号房] 5轮单药完成，进入最终三药阶段...")
+              p23.step = "Room8_FinalBatch"
+            end
+          end
+        end
+      end
+    elseif p23.step == "Room8_FinalBatch" then
+      task.wait(1)
+      local v81 = {}
+      for index19, value21 in ipairs(inv:GetChildren()) do
+        if value21:IsA("Frame") then
+          table.insert(v81, value21.Name)
+        end
+      end
+      if #v81 >= 3 then
+        print("[8号房] 最终阶段：执行3种药...")
+        for index20, value22 in ipairs(v81) do
+          local v82 = f3(value22)
+          if v82 and v82.Parent then
+            f23(v82, nil, v82.Parent:GetPivot(), value22)
+            task.wait(0.3)
+            local localPlayer7 = game.Players.LocalPlayer
+            local v83 = v1[localPlayer7.Name]
+            local humanoid3 = v83
+            humanoid3 = v83 and v83:FindFirstChild("Humanoid")
+            local findFirstChild11 = localPlayer7.Backpack:FindFirstChild(value22)
+            local findFirstChild12 = findFirstChild11
+            findFirstChild12 = findFirstChild11 or v83:FindFirstChild(value22)
+            if findFirstChild12 and humanoid3 and not v83:FindFirstChild(value22) then
+              humanoid3:EquipTool(findFirstChild12)
+            end
+            task.wait(1.5)
+            local bed3 = room8.Minigame:FindFirstChild("Bed")
+            local inBed9 = bed3.InBed
+            local getPivot3 = bed3
+            local pp4 = inBed9:FindFirstChild("PP")
+            getPivot3 = bed3 and bed3:GetPivot()
+            local cframe5 = getPivot3
+            cframe5 = getPivot3 or CFrame.new()
+            f23(pp4, "apply treatment", CFrame.new(
+              cframe5.Position.X, v83.HumanoidRootPart.Position.Y, cframe5.Position.Z
+            ) * CFrame.new(0, 0, -4), "8号房病床(最终)")
+            task.wait(0.3)
+          end
+        end
+        print("[8号房] 手术全部完成!")
+        v78 = nil
+        p23.step = "DonePatient"
+      end
+    end
+    return
+  end
+end
+
+local function f27(p24)
+  local v84 = isTakingMed
+  local npc2 = p24.npc
+  local v85 = v84 and npc2.Name ~= isTakingMed
+  local visitorBadge, v86, v87
+  if v85 then
+    print("正在取药 ", npc2.Name, isTakingMed)
+    return
+  elseif preventingAnomaly then
+    print("等待驱逐异常中")
+    return
+  else
+    local v88 = f24(p24)
+    local checkInFolder2 = p24.checkInFolder
+    local character2 = game.Players.LocalPlayer.Character
+    local humanoidRootPart5 = character2
+    humanoidRootPart5 = character2
+      and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not npc2 or not npc2.Parent or not humanoidRootPart5 then
+      p24.npc = nil
+      return
+    elseif v88 == "Stamp" then
+      if f23(checkInFolder2 and checkInFolder2:FindFirstChild("Form")
+        and checkInFolder2.Form:FindFirstChild("PP"), nil, p24.counterCF) then
+        p24.step = "Photo"
+      end
+      if checkInFolder2:FindFirstChild("Form") and checkInFolder2.Form:FindFirstChild("Stamps") then
+        p24.step = "Photo"
+      end
+      return
+    elseif v88 == "StalkerCheckin" then
+      if f23(v1.Misc:WaitForChild("StrangePaper")
+        and v1.Misc:WaitForChild("StrangePaper"):FindFirstChild("PP"), "Inspect", v1.Misc:WaitForChild("StrangePaper")) then
+        p24.step = "StalkerPhoto"
+      end
+      return
+    elseif v88 == "StalkerPhoto" then
+      if f23(checkInFolder2 and checkInFolder2:FindFirstChild("Camera")
+        and checkInFolder2.Form:FindFirstChild("StalkerPP"), "Take Photo", p24.counterCF) then
+        p24.step = "DonePatient"
+      end
+      return
+    elseif v88 == "Photo" then
+      if f23(checkInFolder2 and checkInFolder2:FindFirstChild("Camera")
+        and checkInFolder2.Camera:FindFirstChild("PP"), nil, p24.counterCF) then
+        p24.step = "Register"
+      end
+      if checkInFolder2:FindFirstChild("Photo") then
+        p24.step = "Register"
+      end
+      return
+    elseif v88 == "Register" then
+      local checkIn = v1.Misc.CheckIn
+      local label = checkIn and checkIn:FindFirstChild("Computer")
+        and checkIn.Computer:FindFirstChild("Screen")
+        and checkIn.Computer.Screen:FindFirstChild("UI")
+        and checkIn.Computer.Screen.UI:FindFirstChild("Label")
+      if label and string.find(label.Text, "REGISTERED") then
+        p24.step = "Print"
+      end
+      if f23(checkIn and checkIn:FindFirstChild("Computer")
+        and checkIn.Computer:FindFirstChild("PP"), "Register", p24.registerCF) then
+        p24.step = "Print"
+      end
+      return
+    elseif v88 == "Print" then
+      local checkIn2 = v1.Misc.CheckIn
+      local printedBadge = checkIn2
+      printedBadge = checkIn2 and checkIn2:FindFirstChild("PrintedBadge")
+      local pp5 = printedBadge
+      pp5 = printedBadge and printedBadge:FindFirstChild("PP")
+      if printedBadge and pp5 and pp5.Enabled then
+        p24.step = "TakeBadge"
+      end
+      if npc2:GetAttribute("IsVisitor") then
+        visitorBadge = checkIn2 and checkIn2:FindFirstChild("VisitorBadge")
+      else
+        visitorBadge = checkIn2 and checkIn2:FindFirstChild("PatientBadge")
+      end
+      if visitorBadge then
+        p24.step = "Talk"
+      end
+      if f23(checkIn2 and checkIn2:FindFirstChild("Printer")
+        and checkIn2.Printer:FindFirstChild("PP"), "Print", p24.registerCF) then
+        p24.step = "TakeBadge"
+      end
+      return
+    elseif v88 == "TakeBadge" then
+      local printedBadge2 = checkInFolder2
+      printedBadge2 = checkInFolder2 and checkInFolder2:FindFirstChild("PrintedBadge")
+      if f23(printedBadge2 and printedBadge2:FindFirstChild("PP"), nil, p24.registerCF) then
+        p24.step = "Talk"
+      end
+      return
+    elseif v88 == "Talk" then
+      if f23(
+        npc2:FindFirstChild("PP"), "talk", npc2:GetPivot() * CFrame.new(0, 0, -3), npc2.Name
+      ) then
+        if npc2:GetAttribute("IsVisitor") then
+          print("[调试] 与访客对话完成: ", npc2.Name)
+          p24.step = "DoneVisitor"
+        else
+          print("[调试] 与病人对话完成: ", npc2.Name)
+          if p24.roomName == "Room8" then
+            p24.step = "Room8_Prepare"
+          elseif p24.roomName == "Room7" then
+            p24.step = "PreparePatient"
+          elseif p24.roomName == "Room6" then
+            p24.step = "BeginXRay"
+          else
+            p24.step = "WaitTakeDNA"
+          end
+        end
+      end
+      return
+    elseif v88 == "DoneVisitor" then
+      if npc2:GetAttribute("InBed") then
+        if p24.roomName == "Room8" then
+          p24.step = "Room8_Prepare"
+        elseif p24.roomName == "Room7" then
+          p24.step = "PreparePatient"
+        elseif p24.roomName == "Room6" then
+          p24.step = "BeginXRay"
+        else
+          p24.step = "WaitTakeDNA"
+        end
+      end
+      return
+    elseif v88 == "Room8_Prepare" then
+      local room82 = v1.Rooms.Emergency:FindFirstChild("Room8")
+      local inBed10 = room82 and room82:FindFirstChild("Minigame")
+        and room82.Minigame:FindFirstChild("Bed")
+        and room82.Minigame.Bed:FindFirstChild("InBed")
+      local pp210 = inBed10
+      pp210 = inBed10 and inBed10:FindFirstChild("PP2")
+      p24.room8Count = p24.room8Count or 1
+      if f23(pp210, "Sleep Patient", room82.Minigame.Bed:GetPivot() * CFrame.new(0, 0, -3)) then
+        task.wait(5)
+        p24.step = "Room8_SingleLoop"
+      end
+      return
+    elseif v88 == "Room8_SingleLoop" then
+      task.wait(1.5)
+      local room83 = v1.Rooms.Emergency:FindFirstChild("Room8")
+      local tv2 = room83 and room83:FindFirstChild("Minigame")
+        and room83.Minigame:FindFirstChild("TV")
+      local inv2 = tv2 and tv2:FindFirstChild("Screen") and tv2.Screen:FindFirstChild("UI")
+        and tv2.Screen.UI:FindFirstChild("Report")
+        and tv2.Screen.UI.Report:FindFirstChild("inv")
+      if inv2 then
+        local name4 = nil
+        for index21, value23 in ipairs(inv2:GetChildren()) do
+          if value23:IsA("Frame") then
+            name4 = value23.Name
+            break
+          end
+        end
+        if name4 then
+          print(string.format(
+            "[8号房] 第%d轮 - 从清单取药: %s", p24.room8Count, name4
+          ))
+          local v89 = f3(name4)
+          if v89 and v89.Parent then
+            f23(v89, nil, v89.Parent:GetPivot(), name4)
+            task.wait(0.5)
+            local localPlayer8 = game.Players.LocalPlayer
+            local v90 = v1[localPlayer8.Name]
+            local humanoid4 = v90
+            humanoid4 = v90 and v90:FindFirstChild("Humanoid")
+            local findFirstChild13 = localPlayer8.Backpack:FindFirstChild(name4)
+            local findFirstChild14 = findFirstChild13
+            findFirstChild14 = findFirstChild13 or v90:FindFirstChild(name4)
+            if findFirstChild14 and humanoid4 and not v90:FindFirstChild(name4) then
+              humanoid4:EquipTool(findFirstChild14)
+            end
+            task.wait(1.5)
+            local bed4 = room83.Minigame:FindFirstChild("Bed")
+            local inBed11 = bed4.InBed
+            local getPivot4 = bed4
+            local pp6 = inBed11:FindFirstChild("PP")
+            getPivot4 = bed4 and bed4:GetPivot()
+            local cframe6 = getPivot4
+            cframe6 = getPivot4 or CFrame.new()
+            local v91 = CFrame.new(
+              cframe6.Position.X, v90.HumanoidRootPart.Position.Y, cframe6.Position.Z
+            ) * CFrame.new(0, 0, -4)
+            if f23(pp6, "apply treatment", CFrame.new(
+              v91.Position, Vector3.new(cframe6.Position.X, v91.Position.Y, cframe6.Position.Z)
+            ), "8号房病床") then
+              p24.room8Count = p24.room8Count + 1
+              if p24.room8Count > 5 then
+                print("[8号房] 5轮单药完成，进入最终三药阶段...")
+                p24.step = "Room8_FinalBatch"
+              end
+            end
+          end
+        end
+      end
+      return
+    elseif v88 == "Room8_FinalBatch" then
+      task.wait(1.5)
+      local room84 = v1.Rooms.Emergency:FindFirstChild("Room8")
+      local tv3 = room84 and room84:FindFirstChild("Minigame")
+        and room84.Minigame:FindFirstChild("TV")
+      local inv3 = tv3 and tv3:FindFirstChild("Screen") and tv3.Screen:FindFirstChild("UI")
+        and tv3.Screen.UI:FindFirstChild("Report")
+        and tv3.Screen.UI.Report:FindFirstChild("inv")
+      if inv3 then
+        local v92 = {}
+        for index22, value24 in ipairs(inv3:GetChildren()) do
+          if value24:IsA("Frame") then
+            table.insert(v92, value24.Name)
+          end
+        end
+        if #v92 >= 3 then
+          print("[8号房] 最终阶段：执行3种药...")
+          for index23, value25 in ipairs(v92) do
+            local v93 = f3(value25)
+            if v93 and v93.Parent then
+              f23(v93, nil, v93.Parent:GetPivot(), value25)
+              task.wait(0.3)
+              local localPlayer9 = game.Players.LocalPlayer
+              local v94 = v1[localPlayer9.Name]
+              local humanoid5 = v94
+              humanoid5 = v94 and v94:FindFirstChild("Humanoid")
+              local findFirstChild15 = localPlayer9.Backpack:FindFirstChild(value25)
+              local findFirstChild16 = findFirstChild15
+              findFirstChild16 = findFirstChild15 or v94:FindFirstChild(value25)
+              if findFirstChild16 and humanoid5 and not v94:FindFirstChild(value25) then
+                humanoid5:EquipTool(findFirstChild16)
+              end
+              task.wait(1.5)
+              local bed5 = room84.Minigame:FindFirstChild("Bed")
+              local pp7 = bed5.InBed:FindFirstChild("PP")
+              local getPivot5 = bed5
+              getPivot5 = bed5 and bed5:GetPivot()
+              local cframe7 = getPivot5
+              cframe7 = getPivot5 or CFrame.new()
+              local v95 = CFrame.new(
+                cframe7.Position.X, v94.HumanoidRootPart.Position.Y, cframe7.Position.Z
+              ) * CFrame.new(0, 0, -4)
+              f23(pp7, "apply treatment", CFrame.new(
+                v95.Position,
+                Vector3.new(cframe7.Position.X, v95.Position.Y, cframe7.Position.Z)
+              ), "8号房病床(最终)")
+              task.wait(0.3)
+            end
+          end
+          print("[8号房] 手术全部完成!")
+          p24.step = "DonePatient"
+          p24.room8Count = nil
+          if p24.isCritical then
+            v22 = false
+            p24.isCritical = false
+          end
+          v21 = false
+          p24.npc = nil
+        end
+      end
+      return
+    elseif v88 == "PreparePatient" then
+      local room7 = v1.Rooms.Emergency:FindFirstChild("Room7")
+      print("[调试] 检查7号房对象:", room7)
+      task.wait(2)
+      local bed6 = room7.Minigame:FindFirstChild("Bed")
+      local getPivot6 = bed6
+      getPivot6 = bed6 and bed6:GetPivot()
+      local cframe8 = getPivot6
+      cframe8 = getPivot6 or CFrame.new()
+      local v96 = CFrame.new(
+        cframe8.Position.X, v1[game.Players.LocalPlayer.Name].HumanoidRootPart.Position.Y,
+        cframe8.Position.Z
+      ) * CFrame.new(0, 0, -4)
+      local inBed12 = room7
+      local cframe9 = CFrame.new(v96.Position, Vector3.new(
+        cframe8.Position.X, v96.Position.Y, cframe8.Position.Z
+      ))
+      if room7 then
+        inBed12 = room7:FindFirstChild("Minigame") and room7.Minigame:FindFirstChild("Bed")
+          and room7.Minigame.Bed:FindFirstChild("InBed")
+      end
+      print("[调试] 检查7号房病床:", inBed12)
+      if f23(inBed12 and inBed12:FindFirstChild("PP2"), "Prepare", cframe9, "7号房准备") then
+        p24.step = "SetUp"
+      end
+      return
+    elseif v88 == "BeginXRay" then
+      task.wait(2)
+      local room6 = v1.Rooms.Emergency:FindFirstChild("Room6")
+      print("[调试] 检查6号房对象:", room6)
+      local xrayMonitor = room6 and room6:FindFirstChild("Minigame")
+        and room6.Minigame:FindFirstChild("xrayMonitor")
+      print("[调试] 检查6号房X光机:", xrayMonitor)
+      if f23(
+        xrayMonitor and xrayMonitor:FindFirstChild("PP"), "Begin",
+        xrayMonitor:GetPivot() * CFrame.new(0, 0, 3), "6号房X光"
+      ) then
+        p24.step = "ProcessMonitor6"
+      end
+      return
+    elseif v88 == "SleepPatient" then
+      local room85 = v1.Rooms.Emergency:FindFirstChild("Room8")
+      local inBed13 = room85 and room85:FindFirstChild("Minigame")
+        and room85.Minigame:FindFirstChild("Bed")
+        and room85.Minigame.Bed:FindFirstChild("InBed")
+      local pp211 = inBed13
+      pp211 = inBed13 and inBed13:FindFirstChild("PP2")
+      local bed7 = room85.Minigame:FindFirstChild("Bed")
+      local inBed14 = bed7.InBed
+      local getPivot7 = bed7
+      inBed14:FindFirstChild("PP")
+      getPivot7 = bed7 and bed7:GetPivot()
+      local cframe10 = getPivot7
+      cframe10 = getPivot7 or CFrame.new()
+      local v97 = CFrame.new(
+        cframe10.Position.X, v1[game.Players.LocalPlayer.Name].HumanoidRootPart.Position.Y,
+        cframe10.Position.Z
+      ) * CFrame.new(0, 0, -4)
+      if f23(pp211, "Sleep Patient", (CFrame.new(
+        v97.Position, Vector3.new(cframe10.Position.X, v97.Position.Y, cframe10.Position.Z)
+      ))) then
+        p24.step = "ProcessMonitor"
+      end
+      return
+    elseif v88 == "WaitTakeDNA" then
+      local findFirstChild17 = v1.Rooms.Medical:FindFirstChild(npc2:GetAttribute("DesignatedRoom"))
+      local pp8 = npc2:FindFirstChild("PP")
+      local bed8 = findFirstChild17.Minigame:FindFirstChild("Bed")
+      local inBed15 = bed8.InBed
+      local getPivot8 = bed8
+      inBed15:FindFirstChild("PP")
+      getPivot8 = bed8 and bed8:GetPivot()
+      local cframe11 = getPivot8
+      cframe11 = getPivot8 or CFrame.new()
+      local v98 = CFrame.new(
+        cframe11.Position.X, v1[game.Players.LocalPlayer.Name].HumanoidRootPart.Position.Y,
+        cframe11.Position.Z
+      ) * CFrame.new(0, 0, -4)
+      if f23(pp8, "Take DNA", (CFrame.new(
+        v98.Position, Vector3.new(cframe11.Position.X, v98.Position.Y, cframe11.Position.Z)
+      ))) then
+        p24.step = "Analyze"
+      end
+      return
+    elseif v88 == "SetUp" then
+      local pp9 = v1.Rooms.Emergency.Room7.Minigame.StandIV.PP
+      if f23(pp9, "Set Up", pp9.Parent:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "TurnOnMachine"
+      end
+      return
+    elseif v88 == "TurnOnMachine" then
+      local pp10 = v1.Rooms.Emergency.Room7.Minigame.Machine.PP
+      if f23(pp10, "Turn On", pp10.Parent:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "BeginHeartBeat"
+      end
+      return
+    elseif v88 == "BeginHeartBeat" then
+      local pp11 = v1.Rooms.Emergency.Room7.Minigame.HeartMonitor.PP
+      if f23(pp11, "Begin", pp11.Parent:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "ProcessMonitor7"
+      end
+      return
+    elseif v88 == "Analyze" then
+      local findFirstChild18 = v1.Rooms.Medical:FindFirstChild(npc2:GetAttribute("DesignatedRoom"))
+      local minigame2 = findFirstChild18
+      minigame2 = findFirstChild18
+        and v1.Rooms.Medical[npc2:GetAttribute("DesignatedRoom")]:FindFirstChild("Minigame")
+      if f23(minigame2 and minigame2:FindFirstChild("Analyzer")
+        and minigame2.Analyzer:FindFirstChild("PP"), nil, minigame2.Analyzer:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "ProcessMonitor"
+      end
+      return
+    elseif v88 == "ProcessMonitor" then
+      local findFirstChild19 = v1.Rooms.Medical:FindFirstChild(npc2:GetAttribute("DesignatedRoom"))
+      local minigame3 = findFirstChild19
+      minigame3 = findFirstChild19
+        and v1.Rooms.Medical[npc2:GetAttribute("DesignatedRoom")]:FindFirstChild("Minigame")
+      if f23(minigame3 and minigame3:FindFirstChild("Monitor")
+        and minigame3.Monitor:FindFirstChild("PP2"), "Process Result", minigame3.Monitor:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "ReadUI"
+      end
+      return
+    elseif v88 == "ProcessMonitor7" then
+      local findFirstChild20 = v1.Rooms.Emergency:FindFirstChild(npc2:GetAttribute("DesignatedRoom"))
+      local minigame4 = findFirstChild20
+      minigame4 = findFirstChild20
+        and v1.Rooms.Emergency[p24.roomName]:FindFirstChild("Minigame")
+      if f23(minigame4 and minigame4:FindFirstChild("Monitor")
+        and minigame4.Monitor:FindFirstChild("PP2"), "Process Result", minigame4.Monitor:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "CollectXRay"
+      end
+      return
+    elseif v88 == "ProcessMonitor6" then
+      local findFirstChild21 = v1.Rooms.Emergency:FindFirstChild(p24.roomName)
+      local minigame5 = findFirstChild21
+      minigame5 = findFirstChild21
+        and v1.Rooms.Emergency[p24.roomName]:FindFirstChild("Minigame")
+      if f23(minigame5 and minigame5:FindFirstChild("Monitor")
+        and minigame5.Monitor:FindFirstChild("PP2"), "Process Result", minigame5.Monitor:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "CollectXRay6"
+      end
+      return
+    elseif v88 == "CollectXRay" then
+      task.wait(2)
+      local findFirstChild22 = v1.Rooms.Emergency:FindFirstChild(p24.roomName)
+      local minigame6 = findFirstChild22
+      minigame6 = findFirstChild22
+        and v1.Rooms.Emergency[p24.roomName]:FindFirstChild("Minigame")
+      if f23(minigame6 and minigame6:WaitForChild("PrintedXRay")
+        and minigame6.PrintedXRay:FindFirstChild("PP"), "Collect", minigame6.PrintedXRay:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "GetIllness"
+      end
+      return
+    elseif v88 == "CollectXRay6" then
+      task.wait(2)
+      local findFirstChild23 = v1.Rooms.Emergency:FindFirstChild(p24.roomName)
+      local minigame7 = findFirstChild23
+      minigame7 = findFirstChild23
+        and v1.Rooms.Emergency[p24.roomName]:FindFirstChild("Minigame")
+      if f23(minigame7 and minigame7:WaitForChild("PrintedXRay")
+        and minigame7.PrintedXRay:FindFirstChild("PP"), "Collect", minigame7.PrintedXRay:GetPivot() * CFrame.new(0, 0, -3)) then
+        p24.step = "GetIllness"
+      end
+      return
+    elseif v88 == "ReadUI" then
+      task.wait(3)
+      local findFirstChild24 = v1.Rooms.Medical:FindFirstChild(npc2:GetAttribute("DesignatedRoom"))
+      local minigame8 = findFirstChild24
+      minigame8 = findFirstChild24
+        and v1.Rooms.Medical[npc2:GetAttribute("DesignatedRoom")]:FindFirstChild("Minigame")
+      local monitor = minigame8
+      monitor = minigame8 and minigame8:FindFirstChild("Monitor")
+      local illnesses = monitor and monitor:FindFirstChild("Screen")
+        and monitor.Screen:FindFirstChild("UI") and monitor.Screen.UI:FindFirstChild("Report")
+        and monitor.Screen.UI.Report:FindFirstChild("illnesses")
+      if illnesses and illnesses.Text and illnesses.Text ~= "" and illnesses.Text ~= "Label" then
+        p24.medQueue = {}
+        v87 = require(replicatedStorage.Data.IllnessesAndCures)
+        for match in string.gmatch(illnesses.Text, "[^\r\n]+") do
+          local v99 = string.gsub(match, "^%-%s*", "")
+          v99 = string.match(v99, "^%s*(.-)%s*$")
+          if v99 and v99 ~= "" then
+            local v100, v101 = pcall(function() return v87.GetIllnessByName(v99) end)
+            if v100 and v101 and v101.HealedWith then
+              table.insert(p24.medQueue, v101.HealedWith)
+            end
+          end
+        end
+        if #p24.medQueue > 0 then
+          p24.medIndex = 1
+          p24.step = "TakeMedicine"
+        end
+      end
+      return
+    elseif v88 == "GetIllness" then
+      task.wait(3)
+      local findFirstChild25 = v1.Rooms.Emergency:FindFirstChild(npc2:GetAttribute("DesignatedRoom"))
+      local minigame9 = findFirstChild25
+      minigame9 = findFirstChild25
+        and v1.Rooms.Emergency[npc2:GetAttribute("DesignatedRoom")]:FindFirstChild("Minigame")
+      local monitor2 = minigame9
+      monitor2 = minigame9 and minigame9:FindFirstChild("Monitor")
+      local illnesses2 = monitor2 and monitor2:FindFirstChild("Screen")
+        and monitor2.Screen:FindFirstChild("UI") and monitor2.Screen.UI:FindFirstChild("Report")
+        and monitor2.Screen.UI.Report:FindFirstChild("illnesses")
+      if illnesses2 and illnesses2.Text and illnesses2.Text ~= "" and illnesses2.Text ~= "Label" then
+        p24.medQueue = {}
+        v86 = require(replicatedStorage.Data.IllnessesAndCures)
+        for match2 in string.gmatch(illnesses2.Text, "[^\r\n]+") do
+          local v102 = string.gsub(match2, "^%-%s*", "")
+          v102 = string.match(v102, "^%s*(.-)%s*$")
+          if v102 and v102 ~= "" then
+            local v103, v104 = pcall(function() return v86.GetIllnessByName(v102) end)
+            if v103 and v104 and v104.HealedWith then
+              table.insert(p24.medQueue, v104.HealedWith)
+            end
+          end
+        end
+        if #p24.medQueue > 0 then
+          p24.medIndex = 1
+          p24.step = "TakeMedicine"
+        end
+      end
+      return
+    elseif v88 == "TakeMedicine" then
+      if isTakingMed and npc2.Name ~= isTakingMed then
+        return
+      else
+        local v105 = p24.medQueue[p24.medIndex]
+        local v106 = f3(v105)
+        isTakingMed = npc2.Name
+        local localPlayer10 = game.Players.LocalPlayer
+        if localPlayer10.Character then
+          localPlayer10.Character:FindFirstChild("Humanoid")
+        end
+        if v106 and v106.Parent and f23(v106, nil, v106.Parent:GetPivot(), v105) then
+          p24.medIndex = p24.medIndex + 1
+          if p24.medIndex > #p24.medQueue then
+            p24.medIndex = 1
+            p24.step = "EquipMedicine"
+          end
+        end
+        return
+      end
+    elseif v88 == "EquipMedicine" then
+      local v107 = p24.medQueue[p24.medIndex]
+      if not v107 then
+        p24.medIndex = 1
+        p24.step = "ApplyTreatment"
+        return
+      else
+        local localPlayer11 = game.Players.LocalPlayer
+        local v108 = v1[localPlayer11.Name]
+        local character3 = localPlayer11.Character
+        local humanoid6 = character3
+        humanoid6 = character3 and localPlayer11.Character:FindFirstChild("Humanoid")
+        if v108 and v108:FindFirstChild(v107) then
+          p24.step = "ApplyTreatment"
+        else
+          local findFirstChild26 = localPlayer11.Backpack:FindFirstChild(v107)
+          if findFirstChild26 and humanoid6 then
+            humanoid6:EquipTool(findFirstChild26)
+            p24.step = "ApplyTreatment"
+          else
+            p24.step = "TakeMedicine"
+          end
+        end
+        return
+      end
+    elseif v88 == "ApplyTreatment" then
+      local v109 = p24.medQueue[p24.medIndex]
+      if not npc2 or not npc2.PrimaryPart then
+        return
+      else
+        local roomName2 = p24.roomName
+        local v110 = "Medical"
+        if roomName2 == "Room6" or roomName2 == "Room7" or roomName2 == "Room8" then
+          v110 = "Emergency"
+        end
+        local pp12 = nil
+        local v111 = v1.Rooms[v110]
+        local cframe12 = nil
+        local findFirstChild27 = v111:FindFirstChild(roomName2)
+        local localPlayer12 = game.Players.LocalPlayer
+        local v112 = v1[localPlayer12.Name]
+        if roomName2 ~= "Room6" then
+          local inBed16 = findFirstChild27 and findFirstChild27:FindFirstChild("Minigame")
+            and findFirstChild27.Minigame:FindFirstChild("Bed")
+            and findFirstChild27.Minigame.Bed:FindFirstChild("InBed")
+          local bed9 = findFirstChild27.Minigame:FindFirstChild("Bed")
+          local getPivot9 = bed9 and bed9:GetPivot() or CFrame.new()
+          pp12 = inBed16 and inBed16:FindFirstChild("PP")
+          local v113 = CFrame.new(
+            getPivot9.Position.X, v112.HumanoidRootPart.Position.Y, getPivot9.Position.Z
+          ) * CFrame.new(0, 0, -4)
+          cframe12 = CFrame.new(v113.Position, Vector3.new(
+            getPivot9.Position.X, v113.Position.Y, getPivot9.Position.Z
+          ))
+        end
+        if roomName2 == "Room6" then
+          pp12 = npc2:FindFirstChild("PP")
+          cframe12 = npc2:GetPivot()
+        end
+        local character4 = localPlayer12.Character
+        local humanoid7 = character4
+        humanoid7 = character4 and localPlayer12.Character:FindFirstChild("Humanoid")
+        if not (v112 and v112:FindFirstChild(v109)) then
+          local findFirstChild28 = localPlayer12.Backpack:FindFirstChild(v109)
+          if findFirstChild28 and humanoid7 then
+            humanoid7:EquipTool(findFirstChild28)
+          end
+        end
+        if f23(pp12, "apply treatment", cframe12, roomName2 .. "病床") then
+          p24.medIndex = p24.medIndex + 1
+          if p24.medIndex > #p24.medQueue then
+            print("[调试] 病人治疗全部完成! 处理下一个病人。")
+            p24.npc = nil
+            isTakingMed = nil
+            p24.step = "DonePatient"
+            if p24.isCritical then
+              v22 = false
+            end
+            task.wait(0.5)
+            p24.isCritical = false
+          else
+            p24.step = "EquipMedicine"
+          end
+        end
+        return
+      end
+    end
+  end
+end
+
+local v114 = {}
+
+task.spawn(function()
+  while task.wait(0.5) do
+    if not v20 or v16 then
+    else
+      local room86 = v1.Rooms.Emergency:FindFirstChild("Room8")
+      local inBed17 = room86 and room86:FindFirstChild("Minigame")
+        and room86.Minigame:FindFirstChild("Bed")
+        and room86.Minigame.Bed:FindFirstChild("InBed")
+      local pp212 = inBed17 and inBed17:FindFirstChild("PP2")
+      if pp212 then
+        if not pp212:GetAttribute("ConnectedTrigger") then
+          pp212:SetAttribute("ConnectedTrigger", true)
+          pp212.Triggered:Connect(function(p25)
+            if p25 == game.Players.LocalPlayer and v20 then
+              print("[8号房] 病床PP2被触发! 开始8号房手术...")
+              v78 = { step = "Room8_SingleLoop", room8Count = 1 }
+            end
+          end)
+        end
+      end
+      if v78 then
+        task.wait(3)
+        f26(v78)
+      end
+    end
+  end
+end)
+
+task.spawn(function()
+  local checkIn22, cframe13, cframe14
+  while task.wait(0.2) do
+    if not v16 then
+    else
+      if not v22 then
+        for index24, value26 in ipairs(v114) do
+          if value26.isCritical then
+            v22 = true
+            break
+          end
+        end
+      end
+      if not v21 then
+        for index25, value27 in ipairs(v114) do
+          if value27.step == "Room8_SingleLoop" or value27.step == "Room8_FinalBatch" then
+            v21 = true
+            break
+          end
+        end
+      end
+      if not v21 and not v22 and #v17 > 0 then
+        for index26, value28 in ipairs(v17) do
+          if value28 and value28.Parent then
+            local v115 = false
+            for key3, value29 in pairs(v114) do
+              if value29.npc == value28 then
+                v115 = true
+                break
+              end
+            end
+            if not v115 then
+              table.remove(v17, index26)
+              if tostring((value28:GetAttribute("AsignedCheckIn"))) == "2" then
+                checkIn22 = v1.Misc:FindFirstChild("CheckIn2")
+                cframe14 = CFrame.new(
+                  -99.5330811, 3.4125309, 8.86906433, 0.0087252222, 5.56112916e-8, -0.999961913,
+                  -7.2707472e-8, 1, 5.49789974e-8, 0.999961913, 7.22250064e-8, 0.0087252222
+                )
+                cframe13 = CFrame.new(
+                  -100.390068, 3.41253114, 1.21715105, 0.537300348, -7.88693733e-9,
+                  -0.843390942, -7.75069253e-8, 1, -5.87289151e-8, 0.843390942, 9.69237064e-8,
+                  0.537300348
+                )
+                if checkIn22 and checkIn22:FindFirstChild("Computer") then
+                  cframe13 = checkIn22.Computer.CFrame * CFrame.new(0, 0, -2.5)
+                end
+              else
+                checkIn22 = v1.Misc:FindFirstChild("CheckIn")
+                local cframe15 = CFrame.new(
+                  -103.659035, 3.41253114, 0.207637638, 0.996194482, -8.09708034e-9,
+                  0.0871585235, 1.46768198e-8, 1, -7.485081e-8, -0.0871585235, 7.58451719e-8,
+                  0.996194482
+                )
+                cframe13 = CFrame.new(
+                  -100.390068, 3.41253114, 1.21715105, 0.537300348, -7.88693733e-9,
+                  -0.843390942, -7.75069253e-8, 1, -5.87289151e-8, 0.843390942, 9.69237064e-8,
+                  0.537300348
+                )
+                cframe14 = cframe15
+              end
+              local designatedRoom2 = value28:GetAttribute("DesignatedRoom")
+              local step2 = "Stamp"
+              if value28:GetAttribute("CompletedCheckIn")
+                or value28:GetAttribute("SkippedCheckId") then
+                if designatedRoom2 == "Room8" then
+                  step2 = "Room8_Prepare"
+                elseif designatedRoom2 == "Room7" then
+                  step2 = "PreparePatient"
+                elseif designatedRoom2 == "Room6" then
+                  step2 = "BeginXRay"
+                else
+                  step2 = "WaitTakeDNA"
+                end
+              end
+              if value28.Name == "Barney" then
+                break
+              else
+                if value28.Name == "StalkerMonster" then
+                  step2 = "StalkerCheckin"
+                end
+                local isCritical = false
+                if value28:FindFirstChild("Counter", true) then
+                  isCritical = true
+                end
+                table.insert(v114, {
+                  npc = value28,
+                  step = step2,
+                  checkInFolder = checkIn22,
+                  counterCF = cframe14,
+                  registerCF = cframe13,
+                  roomName = designatedRoom2,
+                  medQueue = {},
+                  medIndex = 1,
+                  room8Count = 1,
+                  isCritical = isCritical,
+                })
+                break
+              end
+            end
+          end
+        end
+      end
+      for j = #v114, 1, -1 do
+        local v116 = v114[j]
+        if not v116.npc or not v116.npc.Parent or v116.npc:GetAttribute("Treated") == true then
+          table.remove(v114, j)
+        else
+          local isCritical2 = v116.isCritical
+          local v117 = v116.step == "Room8_SingleLoop" or v116.step == "Room8_FinalBatch"
+          local v118 = v22
+          local v119 = true
+          if v118 and not isCritical2 and not v21 then
+            v119 = false
+          elseif v21 and not v117 then
+            v119 = false
+          end
+          if v119 then
+            f27(v116)
+          end
+        end
+      end
+    end
+  end
+end)
+
+local v120 = {}
+
+local function f28()
+  local v121 = false
+  if v21 then
+    return
+  end
+  local pp13, v122
+  if npCs then
+    for index27, value30 in ipairs(npCs:GetChildren()) do
+      local v123 = false
+      for index28, value31 in ipairs(v120) do
+        if value31 == value30 then
+          v123 = true
+          break
+        end
+      end
+      if not v123 then
+        local asignedCheckIn = value30:GetAttribute("AsignedCheckIn")
+        if not asignedCheckIn then
+          asignedCheckIn = "1"
+        end
+        local skippedCheckIn = value30:GetAttribute("SkippedCheckIn")
+        if (f18(value30) or value30.Name == "Barney") and not skippedCheckIn then
+          v121 = true
+          local v124 = "CheckIn"
+          v122 = value30
+          if tostring(asignedCheckIn) == "2" then
+            v124 = "CheckIn2"
+          end
+          local misc = v1:FindFirstChild("Misc")
+          local findFirstChild29 = misc
+          findFirstChild29 = misc and misc:FindFirstChild(v124)
+          local form = findFirstChild29
+          form = findFirstChild29 and findFirstChild29:FindFirstChild("Form")
+          if form then
+            pp13 = form:FindFirstChild("PP")
+          end
+          break
+        end
+      end
+    end
+  end
+  if v121 and v122 then
+    local shutterButton = v1.Misc:FindFirstChild("ShutterButton")
+    local pp14 = shutterButton
+    pp14 = shutterButton and v1.Misc.ShutterButton:FindFirstChild("PP")
+    if v122.Name == "Barney" then
+      if v122:FindFirstChild("PP").Enabled then
+        preventingAnomaly = true
+        local shutterButton2 = v1.Misc:FindFirstChild("ShutterButton")
+        v1[players.LocalPlayer.Name].HumanoidRootPart.CFrame = shutterButton2:GetPivot()
+          * CFrame.new(0, 0, -3)
+        task.wait(0.5)
+        fireproximityprompt(pp14)
+        local requiresLineOfSight6 = pp14.RequiresLineOfSight
+        pp14.RequiresLineOfSight = false
+        task.wait(7)
+        local shutterButton3 = v1.Misc:FindFirstChild("ShutterButton")
+        v1[players.LocalPlayer.Name].HumanoidRootPart.CFrame = shutterButton3:GetPivot()
+          * CFrame.new(0, 0, -3)
+        task.wait(0.5)
+        fireproximityprompt(pp14)
+        preventingAnomaly = false
+        pp14.RequiresLineOfSight = requiresLineOfSight6
+        table.insert(v120, v122)
+      end
+    end
+    if pp13 and pp13.Enabled then
+      preventingAnomaly = true
+      local shutterButton4 = v1.Misc:FindFirstChild("ShutterButton")
+      v1[players.LocalPlayer.Name].HumanoidRootPart.CFrame = shutterButton4:GetPivot()
+        * CFrame.new(0, 0, -3)
+      task.wait(0.5)
+      fireproximityprompt(pp14)
+      local requiresLineOfSight7 = pp14.RequiresLineOfSight
+      pp14.RequiresLineOfSight = false
+      task.wait(5)
+      local shutterButton5 = v1.Misc:FindFirstChild("ShutterButton")
+      v1[players.LocalPlayer.Name].HumanoidRootPart.CFrame = shutterButton5:GetPivot()
+        * CFrame.new(0, 0, -3)
+      task.wait(0.5)
+      fireproximityprompt(pp14)
+      pp14.RequiresLineOfSight = requiresLineOfSight7
+      preventingAnomaly = false
+      table.insert(v120, v122)
+    end
+  end
+  for k = #v120, 1, -1 do
+    local v125 = v120[k]
+    if not v125 or not v125.Parent then
+      table.remove(v120, k)
+    end
+  end
+end
+
+task.spawn(function()
+  while task.wait(2) do
+    if not v16 then
+    else
+      f28()
+      if npCs then
+        for index29, value32 in ipairs(npCs:GetChildren()) do
+          if f19(value32) then
+            if v23.npc == value32 then
+            elseif value32:GetAttribute("Treated") then
+            else
+              local v126 = false
+              for index30, value33 in ipairs(v17) do
+                if value33 == value32 then
+                  v126 = true
+                  break
+                end
+              end
+              if not v126 then
+                print("[调试] 发现空闲病人，加入队列:", value32.Name)
+                table.insert(v17, value32)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+end)
+
+-- ===== 防工作压力：默认开启（理智锁定） =====
+connect4 = runService.Heartbeat:Connect(function()
+    localPlayer:SetAttribute("SanityImpactMultiplier", 0)
+end)
+
+local v128
+v128 = hookmetamethod(game, "__namecall", function(p27, ...)
+    if v6 and getnamecallmethod() == "FireServer"
+        and string.find(tostring(p27), "PlayerLostSanity") then
+        return
+    end
+    return v128(p27, ...)
+end)
+
+localPlayer.CharacterAdded:Connect(function(character5)
+    local waitForChild = character5:WaitForChild("Humanoid", 5)
+    if waitForChild then
+        waitForChild.WalkSpeed = walkSpeed2
+    end
+end)
+
+if v7 and misc2 then
+    for index33, value55 in ipairs(misc2:GetChildren()) do
+        if value55.Name == "Slime" then
+            task.spawn(f8, value55)
+        end
+    end
+    connect7 = misc2.ChildAdded:Connect(function(child2)
+        if v7 and child2.Name == "Slime" then
+            task.wait(0.1)
+            task.spawn(f8, child2)
+        end
+    end)
+end
+
+for index35, value59 in ipairs(v1:GetDescendants()) do
+    if value59.Name == "Fire" and string.find(value59.Parent.Name, "Room") then
+        task.spawn(f11, value59)
+    end
+end
+connect8 = v1.DescendantAdded:Connect(function(descendant7)
+    if v8 and descendant7.Name == "Fire" and string.find(descendant7.Parent.Name, "Room") then
+        task.spawn(f11, descendant7)
+    end
+end)
+
+-- ===== 防挂机默认开启 =====
+f4(true)
+
+-- ===== ESP 初始刷新 =====
+f22()
+
+f13()
+connect6 = v1.DescendantAdded:Connect(function(descendant5)
+    if v12 and descendant5.Name == "boop" and descendant5:IsA("Sound") then
+        local parent5 = descendant5.Parent
+        if parent5 and parent5.Name == "Button" then
+            local parent6 = parent5.Parent
+            if parent6 and parent6.Name == "Model" and parent6.Parent
+                and parent6.Parent.Name == "Colors" then
+                local waitForChild3 = parent5:WaitForChild("ClickDetector", 3)
+                if waitForChild3 then
+                    f10(descendant5, waitForChild3)
+                end
+            end
+        end
+    end
+end)
+
+-- =====================================================================
+--                         彩虹界面（分区/选项卡）
+
+local connect4, connect5, connect6, connect7, connect8
+local misc2 = v1:FindFirstChild("Misc")
+-- =====================================================================
+
+local userId = LocalPlayer.UserId
+local accountAge = LocalPlayer.AccountAge
+local avatarThumbUrl = "rbxthumb://type=AvatarHeadShot&id=" .. userId .. "&w=420&h=420"
+
+local AnnounceSection = Window:Section({ Title = "公告" })
+local SupportSection = Window:Section({ Title = "通用辅助" })
+local AutomationSection = Window:Section({ Title = "自动化" })
+local AnomalySection = Window:Section({ Title = "异常怪物" })
+
+local AnnounceTab = nil
+
+-- ===== 公告 =====
+do
+    AnnounceTab = AnnounceSection:Tab({
+        Title = "公告",
+        Desc = "作者信息与玩家信息",
+        Icon = "bell",
+        IconColor = makeRainbowColor(0),
+        IconShape = "Square",
+        Border = true,
+    })
+
+    AnnounceTab:Section({ Title = "作者信息", TextSize = 18, FontWeight = Enum.FontWeight.SemiBold })
+    AnnounceTab:Paragraph({
+        Title = "动物医院 HUB",
+        Desc = "欢迎使用 动物医院 HUB\n全自动接诊 / 治疗 / 清理异常\n更多功能持续更新中",
+        ImageSize = 48,
+    })
+    AnnounceTab:Space({ Columns = 3 })
+
+    AnnounceTab:Section({ Title = "玩家信息", TextSize = 18, FontWeight = Enum.FontWeight.SemiBold })
+    AnnounceTab:Paragraph({
+        Title = "用户名: " .. LocalPlayer.Name,
+        Desc = "显示名称: " .. LocalPlayer.DisplayName .. "\n账号天数: " .. accountAge .. " 天",
+        ImageSize = 32,
+    })
+end
+
+-- ===== 头像框插入 =====
+task.spawn(function()
+    local main = Window.UIElements and Window.UIElements.Main
+    if not main then return end
+
+    local function createAvatarFrame()
+        local frame = Instance.new("Frame")
+        frame.Name = "WXHUBAvatarFrame"
+        frame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+        frame.BackgroundTransparency = 0
+        frame.Size = UDim2.new(1, -20, 0, 155)
+        frame.BorderSizePixel = 0
+        frame.ClipsDescendants = true
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 18)
+        corner.Parent = frame
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = 2.5
+        stroke.Color = makeRainbowColor(0)
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        stroke.Parent = frame
+
+        local avatarImg = Instance.new("ImageLabel")
+        avatarImg.Name = "AvatarImage"
+        avatarImg.Image = avatarThumbUrl
+        avatarImg.BackgroundTransparency = 1
+        avatarImg.Size = UDim2.new(0, 115, 0, 115)
+        avatarImg.Position = UDim2.new(0.5, -57, 0.5, -57)
+        avatarImg.Parent = frame
+
+        local imgCorner = Instance.new("UICorner")
+        imgCorner.CornerRadius = UDim.new(0, 12)
+        imgCorner.Parent = avatarImg
+
+        return frame
+    end
+
+    local function insertIntoScroller(scroller)
+        if scroller and not scroller:FindFirstChild("WXHUBAvatarFrame") then
+            local frame = createAvatarFrame()
+            frame.Parent = scroller
+            frame.ZIndex = 10
+            return true
+        end
+        return false
+    end
+
+    local inserted = false
+    for _ = 1, 60 do
+        if AnnounceTab then
+            local container = AnnounceTab.Content or AnnounceTab.Container or AnnounceTab.Frame or AnnounceTab.TabFrame or AnnounceTab.Instance
+            if container and container:IsA("GuiObject") then
+                local scroller = container:FindFirstChildOfClass("ScrollingFrame")
+                if not scroller then
+                    for _, child in pairs(container:GetDescendants()) do
+                        if child:IsA("ScrollingFrame") then scroller = child break end
+                    end
+                end
+                if insertIntoScroller(scroller) then inserted = true break end
+            end
+        end
+        if not inserted then
+            for _, scroll in pairs(main:GetDescendants()) do
+                if scroll:IsA("ScrollingFrame") then
+                    for _, child in pairs(scroll:GetDescendants()) do
+                        if child:IsA("TextLabel") and (child.Text:find("玩家信息") or child.Text:find("作者信息")) then
+                            if insertIntoScroller(scroll) then inserted = true break end
+                        end
+                    end
+                end
+                if inserted then break end
+            end
+        end
+        if inserted then break end
+        task.wait(0.3)
+    end
+end)
+
+-- ===== 通用辅助 =====
+local SupportTab = SupportSection:Tab({
+    Title = "通用辅助",
+    Desc = "基础辅助功能",
+    Icon = "settings",
+    IconColor = makeRainbowColor(120),
+    IconShape = "Square",
+    Border = true,
+})
+
+SupportTab:Section({ Title = "辅助开关", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+SupportTab:Toggle({
+    Title = "即时交互（长按秒变0）",
+    Value = false,
+    Callback = function(value34) f5(value34) end,
+})
+
+SupportTab:Toggle({
+    Title = "防工作压力（理智不掉）",
+    Value = v6,
+    Callback = function(value35)
+        v6 = value35
+        local localPlayer13 = game.Players.LocalPlayer
+        local v127
+        if value35 then
+            if connect4 then
+                connect4:Disconnect()
+            end
+            connect4 = runService.Heartbeat:Connect(function()
+                localPlayer13:SetAttribute("SanityImpactMultiplier", 0)
+            end)
+            v127 = nil
+            v127 = hookmetamethod(game, "__namecall", function(p26, ...)
+                if v6 and getnamecallmethod() == "FireServer"
+                    and string.find(tostring(p26), "PlayerLostSanity") then
+                    return
+                end
+                return v127(p26, ...)
+            end)
+            f1("理智", "防工作压力已开启：钢铁意志!", 2)
+        else
+            if connect4 then
+                connect4:Disconnect()
+                connect4 = nil
+            end
+            localPlayer13:SetAttribute("SanityImpactMultiplier", 1)
+            f1("理智", "防工作压力已关闭：恢复正常", 2)
+        end
+    end,
+})
+
+SupportTab:Toggle({
+    Title = "防挂机踢出",
+    Value = true,
+    Callback = function(value36) f4(value36) end,
+})
+
+SupportTab:Section({ Title = "移动速度", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+SupportTab:Slider({
+    Title = "移动速度",
+    Desc = "调整角色移动速度（16 - 100）",
+    Step = 1,
+    Value = { Min = 16, Max = 100, Default = walkSpeed },
+    Callback = function(value38)
+        walkSpeed2 = value38
+        if localPlayer.Character and localPlayer.Character:FindFirstChild("Humanoid") then
+            localPlayer.Character.Humanoid.WalkSpeed = walkSpeed2
+        end
+    end,
+})
+
+SupportTab:Button({
+    Title = "重置移动速度",
+    Color = makeRainbowColor(240),
+    Icon = "rotate-ccw",
+    Callback = function()
+        if localPlayer.Character and localPlayer.Character:FindFirstChild("Humanoid") then
+            localPlayer.Character.Humanoid.WalkSpeed = walkSpeed
+            f1("成功", "已重置移动速度", 2)
+        end
+    end,
+})
+
+-- ===== 自动化 =====
+local AutomationTab = AutomationSection:Tab({
+    Title = "自动化",
+    Desc = "全自动上班工具",
+    Icon = "bot",
+    IconColor = makeRainbowColor(60),
+    IconShape = "Square",
+    Border = true,
+})
+
+AutomationTab:Section({ Title = "全自动值班（登记+治疗）[测试版]", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+AutomationTab:Toggle({
+    Title = "自动值班全流程",
+    Value = false,
+    Callback = function(value37)
+        v16 = value37
+        if value37 then
+            f1("自动化", "自动值班已开启", 2)
+        else
+            table.clear(v17)
+            f1("自动化", "自动值班已关闭", 2)
+        end
+    end,
+})
+
+AutomationTab:Section({ Title = "搬运与饮品", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+AutomationTab:Toggle({
+    Title = "自动搬运昏迷病人",
+    Value = v15,
+    Callback = function(value47)
+        v15 = value47
+        if value47 then
+            f1("自动化", "自动搬运昏迷病人已开启", 2)
+        else
+            f1("自动化", "自动搬运昏迷病人已关闭", 2)
+        end
+    end,
+})
+
+AutomationTab:Toggle({
+    Title = "自动喝咖啡1",
+    Value = false,
+    Callback = function(value48)
+        v5 = value48
+        if value48 then
+            local status2 = v1:FindFirstChild("Misc") and v1.Misc:FindFirstChild("CoffeeMachine")
+                and v1.Misc.CoffeeMachine:FindFirstChild("Attachment")
+                and v1.Misc.CoffeeMachine.Attachment:FindFirstChild("UI")
+                and v1.Misc.CoffeeMachine.Attachment.UI:FindFirstChild("status")
+            if status2 and status2.Text == "coffee: <font color='rgb(0, 200, 0)'>ready</font>" then
+                f21()
+            end
+        end
+    end,
+})
+
+AutomationTab:Section({ Title = "小游戏自动化", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+AutomationTab:Toggle({
+    Title = "自动8号房手术",
+    Value = false,
+    Callback = function(value49)
+        v20 = value49
+        if value49 then
+            f1("自动化", "自动8号房手术已开启", 2)
+        else
+            f1("自动化", "自动8号房手术已关闭", 2)
+        end
+    end,
+})
+
+AutomationTab:Toggle({
+    Title = "自动心跳小游戏",
+    Value = v4,
+    Callback = function(value50) v4 = value50 end,
+})
+
+AutomationTab:Toggle({
+    Title = "自动X光排序",
+    Value = v12,
+    Callback = function(value51)
+        v12 = value51
+        if value51 then
+            f13()
+            connect6 = v1.DescendantAdded:Connect(function(descendant4)
+                if v12 and descendant4.Name == "boop" and descendant4:IsA("Sound") then
+                    local parent3 = descendant4.Parent
+                    if parent3 and parent3.Name == "Button" then
+                        local parent4 = parent3.Parent
+                        if parent4 and parent4.Name == "Model" and parent4.Parent
+                            and parent4.Parent.Name == "Colors" then
+                            local waitForChild2 = parent3:WaitForChild("ClickDetector", 3)
+                            if waitForChild2 then
+                                f10(descendant4, waitForChild2)
+                            end
+                        end
+                    end
+                end
+            end)
+            f1("自动化", "自动X光排序已开启", 2)
+        else
+            if connect6 then
+                connect6:Disconnect()
+                connect6 = nil
+            end
+            table.clear(v13)
+            v14 = false
+            f1("自动化", "自动X光排序已关闭", 2)
+        end
+    end,
+})
+
+AutomationTab:Toggle({
+    Title = "自动修理相机",
+    Value = v9,
+    Callback = function(value52)
+        v9 = value52
+        if value52 then
+            f1("自动化", "自动修理相机已开启", 2)
+        else
+            f1("自动化", "自动修理相机已关闭", 2)
+        end
+    end,
+})
+
+AutomationTab:Section({ Title = "清洁与灭火", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+AutomationTab:Toggle({
+    Title = "自动清理史莱姆",
+    Value = v7,
+    Callback = function(value53)
+        v7 = value53
+        if value53 and misc2 then
+            for index32, value54 in ipairs(misc2:GetChildren()) do
+                if value54.Name == "Slime" then
+                    task.spawn(f8, value54)
+                end
+            end
+            connect7 = misc2.ChildAdded:Connect(function(child)
+                if v7 and child.Name == "Slime" then
+                    task.wait(0.1)
+                    task.spawn(f8, child)
+                end
+            end)
+            f1("自动化", "自动清理史莱姆已开启", 2)
+        else
+            if connect7 then
+                connect7:Disconnect()
+                connect7 = nil
+            end
+            f1("自动化", "自动清理史莱姆已关闭", 2)
+        end
+    end,
+})
+
+AutomationTab:Toggle({
+    Title = "自动扑灭着火病人",
+    Value = v11,
+    Callback = function(value56)
+        v11 = value56
+        if value56 then
+            f1("自动化", "自动扑灭着火病人已开启", 2)
+        else
+            f1("自动化", "自动扑灭着火病人已关闭", 2)
+        end
+    end,
+})
+
+AutomationTab:Toggle({
+    Title = "自动扑灭房间火灾",
+    Value = v8,
+    Callback = function(value57)
+        v8 = value57
+        if value57 then
+            for index34, value58 in ipairs(v1:GetDescendants()) do
+                if value58.Name == "Fire" and string.find(value58.Parent.Name, "Room") then
+                    task.spawn(f11, value58)
+                end
+            end
+            connect8 = v1.DescendantAdded:Connect(function(descendant6)
+                if v8 and descendant6.Name == "Fire" and string.find(descendant6.Parent.Name, "Room") then
+                    task.spawn(f11, descendant6)
+                end
+            end)
+            f1("自动化", "自动扑灭房间火灾已开启", 2)
+        else
+            if connect8 then
+                connect8:Disconnect()
+                connect8 = nil
+            end
+            f1("自动化", "自动扑灭房间火灾已关闭", 2)
+        end
+    end,
+})
+
+-- ===== 异常怪物 =====
+local AnomalyTab = AnomalySection:Tab({
+    Title = "异常怪物",
+    Desc = "ESP 与自动击杀",
+    Icon = "skull",
+    IconColor = makeRainbowColor(300),
+    IconShape = "Square",
+    Border = true,
+})
+
+AnomalyTab:Section({ Title = "病人透视（ESP）", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+AnomalyTab:Toggle({
+    Title = "透视：正常病人（绿）",
+    Value = true,
+    Callback = function(value39)
+        v31 = value39
+    end,
+})
+
+AnomalyTab:Toggle({
+    Title = "透视：异常病人（红）",
+    Value = true,
+    Callback = function(value40)
+        v30 = value40
+        f22()
+    end,
+})
+
+local function f29(p28)
+  for m = 1, 3 do
+    reExtinguisherBubbleHitHider:FireServer(p28)
+  end
+  f1("提示", "躲藏者已成功击杀", 3)
+end
+
+AnomalyTab:Section({ Title = "自动击杀异常", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+f22()
+
+AnomalyTab:Toggle({
+    Title = "自动击杀：眼球团",
+    Value = false,
+    Callback = function(value41)
+        v29.EyeMass = value41
+        f16()
+        if value41 then
+            f1("自动击杀", "眼球团已开启", 2)
+        end
+    end,
+})
+
+AnomalyTab:Toggle({
+    Title = "自动击杀：高个怪",
+    Value = false,
+    Callback = function(value42)
+        v29.TallMonster = value42
+        f16()
+        if value42 then
+            f1("自动击杀", "高个怪已开启", 2)
+        end
+    end,
+})
+
+AnomalyTab:Toggle({
+    Title = "自动击杀：床下怪",
+    Value = false,
+    Callback = function(value43)
+        v29.BedMonster = value43
+        f16()
+        if value43 then
+            f1("自动击杀", "床下怪已开启", 2)
+        end
+    end,
+})
+
+AnomalyTab:Toggle({
+    Title = "自动击杀：幽灵",
+    Value = false,
+    Callback = function(value44)
+        v29.Ghost = value44
+        f16()
+        if value44 then
+            f1("自动击杀", "幽灵已开启", 2)
+        end
+    end,
+})
+
+AnomalyTab:Toggle({
+    Title = "自动击杀：躲藏者",
+    Value = false,
+    Callback = function(value45)
+        v29.Hider = value45
+        if value45 then
+            for index31, value46 in ipairs(v1:GetDescendants()) do
+                if value46.Name == "Hider" and value46:IsA("Model") then
+                    task.spawn(f29, value46)
+                end
+            end
+            connect5 = v1.DescendantAdded:Connect(function(descendant3)
+                if v29.Hider and descendant3.Name == "Hider" and descendant3:IsA("Model") then
+                    task.spawn(f29, descendant3)
+                end
+            end)
+            f1("自动击杀", "躲藏者已开启", 2)
+        else
+            if connect5 then
+                connect5:Disconnect()
+                connect5 = nil
+            end
+            f1("自动击杀", "躲藏者已关闭", 2)
+        end
+    end,
+})
+
+AnomalyTab:Section({ Title = "异常攻击应对", TextSize = 16, FontWeight = Enum.FontWeight.SemiBold })
+
+AnomalyTab:Toggle({
+    Title = "自动击倒异常",
+    Value = v18,
+    Callback = function(value60)
+        v18 = value60
+        if value60 then
+            f1("自动化", "自动击倒异常已开启", 2)
+        else
+            f1("自动化", "自动击倒异常已关闭", 2)
+        end
+    end,
+})
+
+AnomalyTab:Toggle({
+    Title = "自动阻止死亡仪式",
+    Value = v19,
+    Callback = function(value61)
+        v19 = value61
+        if value61 then
+            f1("自动化", "自动阻止死亡仪式已开启", 2)
+        else
+            f1("自动化", "自动阻止死亡仪式已关闭", 2)
+        end
+    end,
+})
+
+print("动物医院 HUB")
